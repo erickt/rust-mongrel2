@@ -60,8 +60,8 @@ mod request {
     type headers = map::hashmap<[u8], [u8]>;
 
     type t = {
-        sender: [u8],
-        id: int,
+        uuid: [u8],
+        id: [u8],
         path: [u8],
         headers: headers,
         body: [u8],
@@ -69,27 +69,25 @@ mod request {
 
     fn parse(msg: [u8]) -> t {
         let end = vec::len(msg);
-        let (start, sender) = parse_sender(msg, 0u, end);
+        let (start, uuid) = parse_uuid(msg, 0u, end);
         let (start, id) = parse_id(msg, start, end);
         let (start, path) = parse_path(msg, start, end);
         let (headers, body) = parse_rest(msg, start, end);
 
-        { sender: sender, id: id, path: path, headers: headers, body: body }
+        { uuid: uuid, id: id, path: path, headers: headers, body: body }
     }
 
-    fn parse_sender(msg: [u8], start: uint, end: uint) -> (uint, [u8]) {
+    fn parse_uuid(msg: [u8], start: uint, end: uint) -> (uint, [u8]) {
         alt vec::position_from(msg, start, end) { |c| c == ' ' as u8 } {
             none { fail "invalid sender uuid" }
             some(i) { (i + 1u, vec::slice(msg, 0u, i)) }
         }
     }
 
-    fn parse_id(msg: [u8], start: uint, end: uint) -> (uint, int) {
+    fn parse_id(msg: [u8], start: uint, end: uint) -> (uint, [u8]) {
         alt vec::position_from(msg, start, end) { |c| c == ' ' as u8 } {
           none { fail "invalid connection id" }
-          some(i) {
-            let id = vec::slice(msg, start, i);
-            (i + 1u, int::parse_buf(id, 10u)) }
+          some(i) { (i + 1u, vec::slice(msg, start, i)) }
         }
     }
 
@@ -188,7 +186,7 @@ mod tests {
         let headers = map::new_bytes_hash();
         headers.insert(str::bytes("foo"), str::bytes("bar"));
 
-        assert request.sender == str::bytes("abCD-123");
+        assert request.uuid == str::bytes("abCD-123");
         assert request.id == 56;
         assert request.headers == headers;
         assert request.body == str::bytes("hello world");
