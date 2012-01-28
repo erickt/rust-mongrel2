@@ -1,4 +1,5 @@
 use std;
+import std::map;
 import std::io::println;
 
 use zmq;
@@ -20,17 +21,23 @@ fn main() {
         str::bytes("tcp://127.0.0.1:9999"));
 
     while true {
-        let x = conn.recv();
-        println(#fmt("sender: %s", str::from_bytes(x.sender)));
-        println(#fmt("id: %d", x.id));
-        println(#fmt("path: %s", str::from_bytes(x.path)));
+        let request = conn.recv();
+        println(#fmt("uuid: %s", str::from_bytes(request.uuid)));
+        println(#fmt("id: %s", str::from_bytes(request.id)));
+        println(#fmt("path: %s", str::from_bytes(request.path)));
 
-        x.headers.items {|k,v|
+        request.headers.items {|k,v|
             println(#fmt("header: %s => %s",
                 str::from_bytes(k),
                 str::from_bytes(v)));
         };
-        println(#fmt("body: %s", str::from_bytes(x.body)));
+        println(#fmt("body: %s", str::from_bytes(request.body)));
+
+        conn.reply_http(request,
+            str::bytes("hello world!"),
+            200u,
+            str::bytes("OK"),
+            map::new_bytes_hash());
     }
 
     conn.term();

@@ -50,6 +50,43 @@ impl connection for connection_t {
         }
     }
 
+    fn send(uuid: [u8], id: [[u8]], body: [u8]) {
+        let id = vec::connect(id, ' ' as u8);
+        let id = tnetstring::to_bytes(tnetstring::string(id));
+        let msg = vec::connect([uuid, id, body], ' ' as u8);
+        alt self.resp.send(msg, 0) {
+          err(e) { fail e.to_str() }
+          ok(()) { }
+        };
+    }
+
+    fn reply(req: request::t, body: [u8]) {
+        self.send(req.uuid, [req.id], body)
+    }
+
+    fn reply_http(req: request::t,
+                  body: [u8],
+                  code: uint,
+                  status: [u8],
+                  headers: request::headers) {
+        let rep = [];
+        rep += str::bytes(#fmt("HTTP/1.1 %u ", code));
+        rep += status;
+        rep += str::bytes("\r\n");
+        rep += str::bytes("Content-Length: ");
+        rep += str::bytes(uint::to_str(vec::len(body), 10u));
+
+        headers.items { |key, value|
+            rep += key;
+            rep += str::bytes(": ");
+            rep += value;
+        }
+        rep += str::bytes("\r\n\r\n");
+        rep += body;
+
+        self.reply(req, rep);
+    }
+
     fn term() {
         self.reqs.close();
         self.resp.close();
