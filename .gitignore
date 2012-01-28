@@ -1,0 +1,6 @@
+config.sqlite
+*.dylib
+*.dSYM
+logs/
+run/
+test
