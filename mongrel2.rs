@@ -167,7 +167,8 @@ mod request {
 
           // Fall back onto json if we got a string.
           tnetstring::string(s) {
-            alt json::from_str(str::unsafe_from_bytes(s)) {
+            let bytes = unsafe { str::unsafe::from_bytes(s) };
+            alt json::from_str(bytes) {
               some(json::dict(map)) {
                 map.items { |key, value|
                     alt value {
