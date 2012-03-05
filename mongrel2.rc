@@ -1,5 +1,5 @@
 #[link(name = "mongrel2",
-       vers = "0.1",
+       vers = "0.2pre",
        uuid = "f1bdda2b-0db7-42df-a40e-0decd4d56bb0")];
 #[crate_type = "lib"];
 

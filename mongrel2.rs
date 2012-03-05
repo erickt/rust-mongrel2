@@ -52,7 +52,7 @@ impl connection for connection_t {
 
     fn send(uuid: [u8], id: [[u8]], body: [u8]) {
         let id = vec::connect(id, ' ' as u8);
-        let id = tnetstring::to_bytes(tnetstring::string(id));
+        let id = tnetstring::to_bytes(tnetstring::str(id));
         let msg = vec::connect([uuid, id, body], ' ' as u8);
         alt self.resp.send(msg, 0) {
           err(e) { fail e.to_str() }
@@ -94,7 +94,7 @@ impl connection for connection_t {
 }
 
 mod request {
-    type headers = map::hashmap<[u8], [u8]>;
+    type headers = map::map<[u8], [u8]>;
 
     type t = {
         uuid: [u8],
@@ -159,17 +159,17 @@ mod request {
           tnetstring::map(map) {
             map.items { |key, value|
                 alt value {
-                  tnetstring::string(s) { headers.insert(key, s); }
+                  tnetstring::str(s) { headers.insert(key, s); }
                   _ { fail "header value is not string"; }
                 }
             };
           }
 
           // Fall back onto json if we got a string.
-          tnetstring::string(s) {
-            let bytes = unsafe { str::unsafe::from_bytes(s) };
-            alt json::from_str(bytes) {
-              some(json::dict(map)) {
+          tnetstring::str(bytes) {
+            alt json::from_str(str::from_bytes(bytes)) {
+              err(e) { fail "invalid JSON string"; }
+              ok(json::dict(map)) {
                 map.items { |key, value|
                     alt value {
                       json::string(v) {
@@ -177,9 +177,9 @@ mod request {
                       }
                       _ { fail "header value is not string"; }
                     }
-                };
+                }
               }
-              _ { fail "invalid header"; }
+              ok(_) { fail "header is not a dictionary"; }
             }
           }
 
@@ -191,7 +191,7 @@ mod request {
 
     fn parse_body(tns: tnetstring::t) -> [u8] {
         alt tns {
-          tnetstring::string(body) { body }
+          tnetstring::str(body) { body }
           _ { fail "invalid body" }
         }
     }
@@ -207,7 +207,7 @@ mod tests {
               err(e) { fail e.to_str() }
             };
 
-        let connection = connection::create(ctx,
+        let connection = connect(ctx,
             str::bytes("F0D32575-2ABB-4957-BC8B-12DAC8AFF13A"),
             str::bytes("tcp://127.0.0.1:9998"),
             str::bytes("tcp://127.0.0.1:9999"));
@@ -225,8 +225,9 @@ mod tests {
         headers.insert(str::bytes("foo"), str::bytes("bar"));
 
         assert request.uuid == str::bytes("abCD-123");
-        assert request.id == 56;
-        assert request.headers == headers;
+        assert request.id == str::bytes("56");
+        assert request.headers.size() == headers.size();
+        request.headers.items() { |k, v| assert v == headers.get(k); }
         assert request.body == str::bytes("hello world");
     }
 }
