@@ -1,6 +1,7 @@
 use std;
 import std::map;
-import std::io::println;
+import std::map::hashmap;
+import io::println;
 
 use zmq;
 import zmq::{context, error};
@@ -16,20 +17,18 @@ fn main() {
         };
 
     let conn = mongrel2::connect(ctx,
-        str::bytes("F0D32575-2ABB-4957-BC8B-12DAC8AFF13A"),
-        str::bytes("tcp://127.0.0.1:9998"),
-        str::bytes("tcp://127.0.0.1:9999"));
+        "F0D32575-2ABB-4957-BC8B-12DAC8AFF13A",
+        "tcp://127.0.0.1:9998",
+        "tcp://127.0.0.1:9999");
 
     while true {
         let request = conn.recv();
-        println(#fmt("uuid: %s", str::from_bytes(request.uuid)));
-        println(#fmt("id: %s", str::from_bytes(request.id)));
-        println(#fmt("path: %s", str::from_bytes(request.path)));
+        println(#fmt("uuid: %s", request.uuid));
+        println(#fmt("id: %s", request.id));
+        println(#fmt("path: %s", request.path));
 
         request.headers.items {|k,v|
-            println(#fmt("header: %s => %s",
-                str::from_bytes(k),
-                str::from_bytes(v)));
+            println(#fmt("header: %s => %s", k, v));
         };
         println(#fmt("body: %s", str::from_bytes(request.body)));
 

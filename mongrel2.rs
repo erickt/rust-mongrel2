@@ -1,23 +1,25 @@
 import std::json;
 import std::map;
+import std::map::hashmap;
 import result::{ok, err, chain};
 import zmq::{context, socket, error};
 
 export connect;
 export connection;
+export request;
 
 type connection_t = {
-    sender_id: [u8],
-    sub_addr: [u8],
-    pub_addr: [u8],
+    sender_id: str,
+    sub_addr: str,
+    pub_addr: str,
     reqs: zmq::socket,
     resp: zmq::socket,
 };
 
 fn connect(ctx: zmq::context,
-          sender_id: [u8],
-          sub_addr: [u8],
-          pub_addr: [u8]) -> connection_t {
+          sender_id: str,
+          sub_addr: str,
+          pub_addr: str) -> connection {
     let reqs =
         alt ctx.socket(zmq::PULL) {
           err(e) { fail e.to_str() }
@@ -39,10 +41,22 @@ fn connect(ctx: zmq::context,
         pub_addr: pub_addr,
         reqs: reqs,
         resp: resp
-    }
+    } as connection
 }
 
-impl connection for connection_t {
+iface connection {
+    fn recv() -> request::t;
+    fn send(uuid: str, id: [str], body: [u8]);
+    fn reply(req: request::t, body: [u8]);
+    fn reply_http(req: request::t,
+                  body: [u8],
+                  code: uint,
+                  status: [u8],
+                  headers: hashmap<[u8], [u8]>);
+    fn term();
+}
+
+impl of connection for connection_t {
     fn recv() -> request::t {
         alt self.reqs.recv(0) {
           err(e) { fail e.to_str() }
@@ -50,10 +64,13 @@ impl connection for connection_t {
         }
     }
 
-    fn send(uuid: [u8], id: [[u8]], body: [u8]) {
-        let id = vec::connect(id, ' ' as u8);
-        let id = tnetstring::to_bytes(tnetstring::str(id));
-        let msg = vec::connect([uuid, id, body], ' ' as u8);
+    fn send(uuid: str, id: [str], body: [u8]) {
+        let id = str::bytes(str::connect(id, " "));
+        let msg = vec::connect([
+            str::bytes(uuid),
+            tnetstring::to_bytes(tnetstring::str(id)),
+            body
+        ], ' ' as u8);
         alt self.resp.send(msg, 0) {
           err(e) { fail e.to_str() }
           ok(()) { }
@@ -68,7 +85,7 @@ impl connection for connection_t {
                   body: [u8],
                   code: uint,
                   status: [u8],
-                  headers: request::headers) {
+                  headers: hashmap<[u8], [u8]>) {
         let rep = [];
         rep += str::bytes(#fmt("HTTP/1.1 %u ", code));
         rep += status;
@@ -94,13 +111,14 @@ impl connection for connection_t {
 }
 
 mod request {
-    type headers = map::map<[u8], [u8]>;
+    export t;
+    export parse;
 
     type t = {
-        uuid: [u8],
-        id: [u8],
-        path: [u8],
-        headers: headers,
+        uuid: str,
+        id: str,
+        path: str,
+        headers: hashmap<str, str>,
         body: [u8],
     };
 
@@ -114,28 +132,29 @@ mod request {
         { uuid: uuid, id: id, path: path, headers: headers, body: body }
     }
 
-    fn parse_uuid(msg: [u8], start: uint, end: uint) -> (uint, [u8]) {
+    fn parse_uuid(msg: [u8], start: uint, end: uint) -> (uint, str) {
         alt vec::position_from(msg, start, end) { |c| c == ' ' as u8 } {
             none { fail "invalid sender uuid" }
-            some(i) { (i + 1u, vec::slice(msg, 0u, i)) }
+            some(i) { (i + 1u, str::from_bytes(vec::slice(msg, 0u, i))) }
         }
     }
 
-    fn parse_id(msg: [u8], start: uint, end: uint) -> (uint, [u8]) {
+    fn parse_id(msg: [u8], start: uint, end: uint) -> (uint, str) {
         alt vec::position_from(msg, start, end) { |c| c == ' ' as u8 } {
           none { fail "invalid connection id" }
-          some(i) { (i + 1u, vec::slice(msg, start, i)) }
+          some(i) { (i + 1u, str::from_bytes(vec::slice(msg, start, i))) }
         }
     }
 
-    fn parse_path(msg: [u8], start: uint, end: uint) -> (uint, [u8]) {
+    fn parse_path(msg: [u8], start: uint, end: uint) -> (uint, str) {
         alt vec::position_from(msg, start, end) { |c| c == ' ' as u8 } {
           none { fail "invalid path" }
-          some(i) { (i + 1u, vec::slice(msg, start, i)) }
+          some(i) { (i + 1u, str::from_bytes(vec::slice(msg, start, i))) }
         }
     }
 
-    fn parse_rest(msg: [u8], start: uint, end: uint) -> (headers, [u8]) {
+    fn parse_rest(msg: [u8], start: uint, end: uint)
+      -> (hashmap<str, str>, [u8]) {
         let rest = vec::slice(msg, start, end);
 
         let (headers, rest) = tnetstring::from_bytes(rest);
@@ -153,13 +172,17 @@ mod request {
         (headers, body)
     }
 
-    fn parse_headers(tns: tnetstring::t) -> headers {
-        let headers = map::new_bytes_hash();
+    fn parse_headers(tns: tnetstring::t) -> hashmap<str, str> {
+        let headers = map::new_str_hash();
         alt tns {
           tnetstring::map(map) {
             map.items { |key, value|
                 alt value {
-                  tnetstring::str(s) { headers.insert(key, s); }
+                  tnetstring::str(v) {
+                      let key = str::from_bytes(key);
+                      let v = str::from_bytes(v);
+                      headers.insert(key, v);
+                  }
                   _ { fail "header value is not string"; }
                 }
             };
@@ -173,7 +196,7 @@ mod request {
                 map.items { |key, value|
                     alt value {
                       json::string(v) {
-                        headers.insert(str::bytes(key), str::bytes(v));
+                        headers.insert(key, v);
                       }
                       _ { fail "header value is not string"; }
                     }
@@ -208,9 +231,9 @@ mod tests {
             };
 
         let connection = connect(ctx,
-            str::bytes("F0D32575-2ABB-4957-BC8B-12DAC8AFF13A"),
-            str::bytes("tcp://127.0.0.1:9998"),
-            str::bytes("tcp://127.0.0.1:9999"));
+            "F0D32575-2ABB-4957-BC8B-12DAC8AFF13A",
+            "tcp://127.0.0.1:9998",
+            "tcp://127.0.0.1:9999");
 
         connection.term();
         ctx.term();
