@@ -118,7 +118,7 @@ mod request {
         uuid: str,
         id: str,
         path: str,
-        headers: hashmap<str, str>,
+        headers: hashmap<str, [str]>,
         body: [u8],
     };
 
@@ -154,7 +154,7 @@ mod request {
     }
 
     fn parse_rest(msg: [u8], start: uint, end: uint)
-      -> (hashmap<str, str>, [u8]) {
+      -> (hashmap<str, [str]>, [u8]) {
         let rest = vec::slice(msg, start, end);
 
         let (headers, rest) = tnetstring::from_bytes(rest);
@@ -172,19 +172,31 @@ mod request {
         (headers, body)
     }
 
-    fn parse_headers(tns: tnetstring::t) -> hashmap<str, str> {
+    fn parse_headers(tns: tnetstring::t) -> hashmap<str, [str]> {
         let headers = map::new_str_hash();
         alt tns {
           tnetstring::map(map) {
             map.items { |key, value|
-                alt value {
-                  tnetstring::str(v) {
-                      let key = str::from_bytes(key);
-                      let v = str::from_bytes(v);
-                      headers.insert(key, v);
+                let key = str::from_bytes(key);
+                let values = alt headers.find(key) {
+                  none { [] }
+                  some(values) { values }
+                };
+
+                let vs = alt value {
+                  tnetstring::str(v) { [str::from_bytes(v)] }
+                  tnetstring::vec(vs) {
+                    vec::map(vs) { |v|
+                        alt v {
+                          tnetstring::str(v) { str::from_bytes(v) }
+                          _ { fail "header value is not a string"; }
+                        }
+                    }
                   }
                   _ { fail "header value is not string"; }
-                }
+                };
+
+                headers.insert(key, values + vs);
             };
           }
 
@@ -194,12 +206,25 @@ mod request {
               err(e) { fail "invalid JSON string"; }
               ok(json::dict(map)) {
                 map.items { |key, value|
-                    alt value {
-                      json::string(v) {
-                        headers.insert(key, v);
+                    let values = alt headers.find(key) {
+                      none { [] }
+                      some(values) { values }
+                    };
+
+                    let vs = alt value {
+                      json::string(v) { [v] }
+                      json::list(vs) {
+                        vec::map(vs) { |v|
+                            alt v {
+                              json::string(v) { v }
+                              _ { fail "header value is not a string"; }
+                            }
+                        }
                       }
                       _ { fail "header value is not string"; }
-                    }
+                    };
+
+                    headers.insert(key, values + vs);
                 }
               }
               ok(_) { fail "header is not a dictionary"; }

@@ -28,7 +28,7 @@ fn main() {
         println(#fmt("path: %s", request.path));
 
         request.headers.items {|k,v|
-            println(#fmt("header: %s => %s", k, v));
+            println(#fmt("header: %s => %s", k, str::connect(v, " ")));
         };
         println(#fmt("body: %s", str::from_bytes(request.body)));
 
