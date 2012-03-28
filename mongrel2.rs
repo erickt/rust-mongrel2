@@ -86,7 +86,7 @@ impl of connection for connection_t {
                   code: uint,
                   status: [u8],
                   headers: hashmap<[u8], [u8]>) {
-        let rep = [];
+        let mut rep = [];
         rep += str::bytes(#fmt("HTTP/1.1 %u ", code));
         rep += status;
         rep += str::bytes("\r\n");
@@ -133,21 +133,21 @@ mod request {
     }
 
     fn parse_uuid(msg: [u8], start: uint, end: uint) -> (uint, str) {
-        alt vec::position_from(msg, start, end) { |c| c == ' ' as u8 } {
+        alt vec::position_between(msg, start, end) { |c| c == ' ' as u8 } {
             none { fail "invalid sender uuid" }
             some(i) { (i + 1u, str::from_bytes(vec::slice(msg, 0u, i))) }
         }
     }
 
     fn parse_id(msg: [u8], start: uint, end: uint) -> (uint, str) {
-        alt vec::position_from(msg, start, end) { |c| c == ' ' as u8 } {
+        alt vec::position_between(msg, start, end) { |c| c == ' ' as u8 } {
           none { fail "invalid connection id" }
           some(i) { (i + 1u, str::from_bytes(vec::slice(msg, start, i))) }
         }
     }
 
     fn parse_path(msg: [u8], start: uint, end: uint) -> (uint, str) {
-        alt vec::position_from(msg, start, end) { |c| c == ' ' as u8 } {
+        alt vec::position_between(msg, start, end) { |c| c == ' ' as u8 } {
           none { fail "invalid path" }
           some(i) { (i + 1u, str::from_bytes(vec::slice(msg, start, i))) }
         }
@@ -173,7 +173,7 @@ mod request {
     }
 
     fn parse_headers(tns: tnetstring::t) -> hashmap<str, [str]> {
-        let headers = map::new_str_hash();
+        let headers = map::str_hash();
         alt tns {
           tnetstring::map(map) {
             map.items { |key, value|
@@ -269,11 +269,11 @@ mod tests {
         let request = request::parse(
             str::bytes("abCD-123 56 / 13:{\"foo\":\"bar\"},11:hello world,"));
 
-        let headers = map::new_bytes_hash();
-        headers.insert(str::bytes("foo"), str::bytes("bar"));
+        let headers = map::str_hash();
+        headers.insert("foo", ["bar"]);
 
-        assert request.uuid == str::bytes("abCD-123");
-        assert request.id == str::bytes("56");
+        assert request.uuid == "abCD-123";
+        assert request.id == "56";
         assert request.headers.size() == headers.size();
         request.headers.items() { |k, v| assert v == headers.get(k); }
         assert request.body == str::bytes("hello world");
