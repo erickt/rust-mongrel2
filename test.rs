@@ -33,10 +33,10 @@ fn main() {
         println(#fmt("body: %s", str::from_bytes(request.body)));
 
         conn.reply_http(request,
-            str::bytes("hello world!"),
             200u,
-            str::bytes("OK"),
-            map::new_bytes_hash());
+            "OK",
+            map::str_hash(),
+            str::bytes("hello world!"));
     }
 
     conn.term();

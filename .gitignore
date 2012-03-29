@@ -4,3 +4,4 @@ config.sqlite
 logs/
 run/
 test
+mongrel2

@@ -49,10 +49,10 @@ iface connection {
     fn send(uuid: str, id: [str], body: [u8]);
     fn reply(req: request::t, body: [u8]);
     fn reply_http(req: request::t,
-                  body: [u8],
                   code: uint,
-                  status: [u8],
-                  headers: hashmap<[u8], [u8]>);
+                  status: str,
+                  headers: hashmap<str, [str]>,
+                  body: [u8]);
     fn term();
 }
 
@@ -82,21 +82,23 @@ impl of connection for connection_t {
     }
 
     fn reply_http(req: request::t,
-                  body: [u8],
                   code: uint,
-                  status: [u8],
-                  headers: hashmap<[u8], [u8]>) {
+                  status: str,
+                  headers: hashmap<str, [str]>,
+                  body: [u8]) {
         let mut rep = [];
         rep += str::bytes(#fmt("HTTP/1.1 %u ", code));
-        rep += status;
+        rep += str::bytes(status);
         rep += str::bytes("\r\n");
         rep += str::bytes("Content-Length: ");
         rep += str::bytes(uint::to_str(vec::len(body), 10u));
 
-        headers.items { |key, value|
-            rep += key;
-            rep += str::bytes(": ");
-            rep += value;
+        headers.items { |key, values|
+            let lines = vec::map(values) { |value|
+                str::bytes(key + ": " + value + "\r\n")
+            };
+
+            rep += vec::concat(lines);
         }
         rep += str::bytes("\r\n\r\n");
         rep += body;
