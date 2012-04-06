@@ -92,6 +92,7 @@ impl of connection for connection_t {
         rep += str::bytes("\r\n");
         rep += str::bytes("Content-Length: ");
         rep += str::bytes(uint::to_str(vec::len(body), 10u));
+        rep += str::bytes("\r\n");
 
         headers.items { |key, values|
             let lines = vec::map(values) { |value|
@@ -100,7 +101,7 @@ impl of connection for connection_t {
 
             rep += vec::concat(lines);
         }
-        rep += str::bytes("\r\n\r\n");
+        rep += str::bytes("\r\n");
         rep += body;
 
         self.reply(req, rep);
