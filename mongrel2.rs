@@ -122,6 +122,29 @@ type request = {
     json_body: option<hashmap<str, json::json>>,
 };
 
+impl request for request {
+    fn is_disconnect() -> bool {
+        self.json_body.map_default(false) { |map|
+            alt map.find("type") {
+              some(json::string(typ)) { typ == "disconnect" }
+              _ { false }
+            }
+        }
+    }
+
+    fn should_close() -> bool {
+        alt self.headers.find("connection") {
+          none { }
+          some(conn) { if conn == ["close"] { ret true; } }
+        }
+
+        alt self.headers.find("VERSION") {
+          none { false }
+          some(version) { version == ["HTTP/1.0"] }
+        }
+    }
+}
+
 fn parse(msg: [u8]) -> request {
     let end = vec::len(msg);
     let (start, uuid) = parse_uuid(msg, 0u, end);
