@@ -45,10 +45,10 @@ fn connect(ctx: zmq::context,
 }
 
 iface connection {
-    fn recv() -> request::t;
+    fn recv() -> request;
     fn send(uuid: str, id: [str], body: [u8]);
-    fn reply(req: request::t, body: [u8]);
-    fn reply_http(req: request::t,
+    fn reply(req: request, body: [u8]);
+    fn reply_http(req: request,
                   code: uint,
                   status: str,
                   headers: hashmap<str, [str]>,
@@ -57,10 +57,10 @@ iface connection {
 }
 
 impl of connection for connection_t {
-    fn recv() -> request::t {
+    fn recv() -> request {
         alt self.reqs.recv(0) {
           err(e) { fail e.to_str() }
-          ok(msg) { request::parse(msg) }
+          ok(msg) { parse(msg) }
         }
     }
 
@@ -77,11 +77,11 @@ impl of connection for connection_t {
         };
     }
 
-    fn reply(req: request::t, body: [u8]) {
+    fn reply(req: request, body: [u8]) {
         self.send(req.uuid, [req.id], body)
     }
 
-    fn reply_http(req: request::t,
+    fn reply_http(req: request,
                   code: uint,
                   status: str,
                   headers: hashmap<str, [str]>,
@@ -113,85 +113,128 @@ impl of connection for connection_t {
     }
 }
 
-mod request {
-    export t;
-    export parse;
+type request = {
+    uuid: str,
+    id: str,
+    path: str,
+    headers: hashmap<str, [str]>,
+    body: [u8],
+    json_body: option<hashmap<str, json::json>>,
+};
 
-    type t = {
-        uuid: str,
-        id: str,
-        path: str,
-        headers: hashmap<str, [str]>,
-        body: [u8],
+fn parse(msg: [u8]) -> request {
+    let end = vec::len(msg);
+    let (start, uuid) = parse_uuid(msg, 0u, end);
+    let (start, id) = parse_id(msg, start, end);
+    let (start, path) = parse_path(msg, start, end);
+    let (headers, body) = parse_rest(msg, start, end);
+
+    // Extract out the json body if we have it.
+    let json_body = headers.find("METHOD").chain { |method|
+        if method == ["JSON"] {
+          alt json::from_str(str::from_bytes(body)) {
+            ok(json::dict(map)) { some(map) }
+            ok(_) { fail "json body is not a dictionary" }
+            err(e) { fail #fmt("invalid JSON string: %s", e.msg); }
+          }
+        } else { none }
     };
 
-    fn parse(msg: [u8]) -> t {
-        let end = vec::len(msg);
-        let (start, uuid) = parse_uuid(msg, 0u, end);
-        let (start, id) = parse_id(msg, start, end);
-        let (start, path) = parse_path(msg, start, end);
-        let (headers, body) = parse_rest(msg, start, end);
-
-        { uuid: uuid, id: id, path: path, headers: headers, body: body }
+    {
+        uuid: uuid,
+        id: id,
+        path: path,
+        headers: headers,
+        body: body,
+        json_body: json_body
     }
+}
 
-    fn parse_uuid(msg: [u8], start: uint, end: uint) -> (uint, str) {
-        alt vec::position_between(msg, start, end) { |c| c == ' ' as u8 } {
-            none { fail "invalid sender uuid" }
-            some(i) { (i + 1u, str::from_bytes(vec::slice(msg, 0u, i))) }
-        }
+fn parse_uuid(msg: [u8], start: uint, end: uint) -> (uint, str) {
+    alt vec::position_between(msg, start, end) { |c| c == ' ' as u8 } {
+        none { fail "invalid sender uuid" }
+        some(i) { (i + 1u, str::from_bytes(vec::slice(msg, 0u, i))) }
     }
+}
 
-    fn parse_id(msg: [u8], start: uint, end: uint) -> (uint, str) {
-        alt vec::position_between(msg, start, end) { |c| c == ' ' as u8 } {
-          none { fail "invalid connection id" }
-          some(i) { (i + 1u, str::from_bytes(vec::slice(msg, start, i))) }
-        }
+fn parse_id(msg: [u8], start: uint, end: uint) -> (uint, str) {
+    alt vec::position_between(msg, start, end) { |c| c == ' ' as u8 } {
+      none { fail "invalid connection id" }
+      some(i) { (i + 1u, str::from_bytes(vec::slice(msg, start, i))) }
     }
+}
 
-    fn parse_path(msg: [u8], start: uint, end: uint) -> (uint, str) {
-        alt vec::position_between(msg, start, end) { |c| c == ' ' as u8 } {
-          none { fail "invalid path" }
-          some(i) { (i + 1u, str::from_bytes(vec::slice(msg, start, i))) }
-        }
+fn parse_path(msg: [u8], start: uint, end: uint) -> (uint, str) {
+    alt vec::position_between(msg, start, end) { |c| c == ' ' as u8 } {
+      none { fail "invalid path" }
+      some(i) { (i + 1u, str::from_bytes(vec::slice(msg, start, i))) }
     }
+}
 
-    fn parse_rest(msg: [u8], start: uint, end: uint)
-      -> (hashmap<str, [str]>, [u8]) {
-        let rest = vec::slice(msg, start, end);
+fn parse_rest(msg: [u8], start: uint, end: uint)
+  -> (hashmap<str, [str]>, [u8]) {
+    let rest = vec::slice(msg, start, end);
 
-        let (headers, rest) = tnetstring::from_bytes(rest);
-        let headers = alt headers {
-          some(headers) { parse_headers(headers) }
-          none { fail "empty headers" }
+    let (headers, rest) = tnetstring::from_bytes(rest);
+    let headers = alt headers {
+      some(headers) { parse_headers(headers) }
+      none { fail "empty headers" }
+    };
+
+    let (body, _) = tnetstring::from_bytes(rest);
+    let body = alt body {
+      some(body) { parse_body(body) }
+      none { fail "empty body" }
+    };
+
+    (headers, body)
+}
+
+fn parse_headers(tns: tnetstring::t) -> hashmap<str, [str]> {
+    let headers = map::str_hash();
+    alt tns {
+      tnetstring::map(map) {
+        map.items { |key, value|
+            let key = str::from_bytes(key);
+            let values = alt headers.find(key) {
+              none { [] }
+              some(values) { values }
+            };
+
+            let vs = alt value {
+              tnetstring::str(v) { [str::from_bytes(v)] }
+              tnetstring::vec(vs) {
+                vec::map(vs) { |v|
+                    alt v {
+                      tnetstring::str(v) { str::from_bytes(v) }
+                      _ { fail "header value is not a string"; }
+                    }
+                }
+              }
+              _ { fail "header value is not string"; }
+            };
+
+            headers.insert(key, values + vs);
         };
+      }
 
-        let (body, _) = tnetstring::from_bytes(rest);
-        let body = alt body {
-          some(body) { parse_body(body) }
-          none { fail "empty body" }
-        };
-
-        (headers, body)
-    }
-
-    fn parse_headers(tns: tnetstring::t) -> hashmap<str, [str]> {
-        let headers = map::str_hash();
-        alt tns {
-          tnetstring::map(map) {
+      // Fall back onto json if we got a string.
+      tnetstring::str(bytes) {
+        alt json::from_str(str::from_bytes(bytes)) {
+          err(e) { fail "invalid JSON string"; }
+          ok(json::dict(map)) {
             map.items { |key, value|
-                let key = str::from_bytes(key);
                 let values = alt headers.find(key) {
                   none { [] }
                   some(values) { values }
                 };
 
                 let vs = alt value {
-                  tnetstring::str(v) { [str::from_bytes(v)] }
-                  tnetstring::vec(vs) {
+                  json::string(v) { [v] }
+                  json::list(vs) {
                     vec::map(vs) { |v|
                         alt v {
-                          tnetstring::str(v) { str::from_bytes(v) }
+                          json::string(v) { v }
                           _ { fail "header value is not a string"; }
                         }
                     }
@@ -200,51 +243,22 @@ mod request {
                 };
 
                 headers.insert(key, values + vs);
-            };
-          }
-
-          // Fall back onto json if we got a string.
-          tnetstring::str(bytes) {
-            alt json::from_str(str::from_bytes(bytes)) {
-              err(e) { fail "invalid JSON string"; }
-              ok(json::dict(map)) {
-                map.items { |key, value|
-                    let values = alt headers.find(key) {
-                      none { [] }
-                      some(values) { values }
-                    };
-
-                    let vs = alt value {
-                      json::string(v) { [v] }
-                      json::list(vs) {
-                        vec::map(vs) { |v|
-                            alt v {
-                              json::string(v) { v }
-                              _ { fail "header value is not a string"; }
-                            }
-                        }
-                      }
-                      _ { fail "header value is not string"; }
-                    };
-
-                    headers.insert(key, values + vs);
-                }
-              }
-              ok(_) { fail "header is not a dictionary"; }
             }
           }
-
-          _ { fail "invalid header"; }
+          ok(_) { fail "header is not a dictionary"; }
         }
+      }
 
-        headers
+      _ { fail "invalid header"; }
     }
 
-    fn parse_body(tns: tnetstring::t) -> [u8] {
-        alt tns {
-          tnetstring::str(body) { body }
-          _ { fail "invalid body" }
-        }
+    headers
+}
+
+fn parse_body(tns: tnetstring::t) -> [u8] {
+    alt tns {
+      tnetstring::str(body) { body }
+      _ { fail "invalid body" }
     }
 }
 
@@ -269,7 +283,7 @@ mod tests {
 
     #[test]
     fn test_request_parse() {
-        let request = request::parse(
+        let request = parse(
             str::bytes("abCD-123 56 / 13:{\"foo\":\"bar\"},11:hello world,"));
 
         let headers = map::str_hash();
