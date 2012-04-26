@@ -94,7 +94,7 @@ impl of connection for connection_t {
         rep += str::bytes(uint::to_str(vec::len(body), 10u));
         rep += str::bytes("\r\n");
 
-        headers.items { |key, values|
+        for headers.each { |key, values|
             let lines = vec::map(values) { |value|
                 str::bytes(key + ": " + value + "\r\n")
             };
@@ -217,7 +217,7 @@ fn parse_headers(tns: tnetstring::t) -> hashmap<str, [str]> {
     let headers = map::str_hash();
     alt tns {
       tnetstring::map(map) {
-        map.items { |key, value|
+        for map.each { |key, value|
             let key = str::from_bytes(key);
             let values = alt headers.find(key) {
               none { [] }
@@ -246,7 +246,7 @@ fn parse_headers(tns: tnetstring::t) -> hashmap<str, [str]> {
         alt json::from_str(str::from_bytes(bytes)) {
           err(e) { fail "invalid JSON string"; }
           ok(json::dict(map)) {
-            map.items { |key, value|
+            for map.each { |key, value|
                 let values = alt headers.find(key) {
                   none { [] }
                   some(values) { values }
@@ -315,7 +315,7 @@ mod tests {
         assert request.uuid == "abCD-123";
         assert request.id == "56";
         assert request.headers.size() == headers.size();
-        request.headers.items() { |k, v| assert v == headers.get(k); }
+        for request.headers.each { |k, v| assert v == headers.get(k); }
         assert request.body == str::bytes("hello world");
     }
 }
