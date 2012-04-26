@@ -238,7 +238,7 @@ fn parse_headers(tns: tnetstring::t) -> hashmap<str, [str]> {
             };
 
             headers.insert(key, values + vs);
-        };
+        }
       }
 
       // Fall back onto json if we got a string.
