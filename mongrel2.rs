@@ -45,10 +45,10 @@ fn connect(ctx: zmq::context,
 }
 
 iface connection {
-    fn recv() -> request;
+    fn recv() -> @request;
     fn send(uuid: str, id: [str], body: [u8]);
-    fn reply(req: request, body: [u8]);
-    fn reply_http(req: request,
+    fn reply(req: @request, body: [u8]);
+    fn reply_http(req: @request,
                   code: uint,
                   status: str,
                   headers: hashmap<str, [str]>,
@@ -57,7 +57,7 @@ iface connection {
 }
 
 impl of connection for connection_t {
-    fn recv() -> request {
+    fn recv() -> @request {
         alt self.reqs.recv(0) {
           err(e) { fail e.to_str() }
           ok(msg) { parse(msg) }
@@ -77,11 +77,11 @@ impl of connection for connection_t {
         };
     }
 
-    fn reply(req: request, body: [u8]) {
+    fn reply(req: @request, body: [u8]) {
         self.send(req.uuid, [req.id], body)
     }
 
-    fn reply_http(req: request,
+    fn reply_http(req: @request,
                   code: uint,
                   status: str,
                   headers: hashmap<str, [str]>,
@@ -122,7 +122,7 @@ type request = {
     json_body: option<hashmap<str, json::json>>,
 };
 
-impl request for request {
+impl request for @request {
     fn is_disconnect() -> bool {
         self.json_body.map_default(false) { |map|
             alt map.find("type") {
@@ -145,7 +145,7 @@ impl request for request {
     }
 }
 
-fn parse(msg: [u8]) -> request {
+fn parse(msg: [u8]) -> @request {
     let end = vec::len(msg);
     let (start, uuid) = parse_uuid(msg, 0u, end);
     let (start, id) = parse_id(msg, start, end);
@@ -163,7 +163,7 @@ fn parse(msg: [u8]) -> request {
         } else { none }
     };
 
-    {
+    @{
         uuid: uuid,
         id: id,
         path: path,
