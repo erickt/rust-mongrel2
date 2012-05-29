@@ -10,22 +10,23 @@ export request;
 
 type connection_t = {
     sender_id: str,
-    sub_addr: str,
-    pub_addr: str,
+    sub_addrs: [str],
+    pub_addrs: [str],
     reqs: zmq::socket,
     resp: zmq::socket,
 };
 
 fn connect(ctx: zmq::context,
           sender_id: str,
-          sub_addr: str,
-          pub_addr: str) -> connection {
+          sub_addrs: [str],
+          pub_addrs: [str]) -> connection {
     let reqs =
         alt ctx.socket(zmq::PULL) {
           err(e) { fail e.to_str() }
           ok(reqs) { reqs }
         };
-    reqs.connect(sub_addr);
+
+    sub_addrs.iter { |sub_addr| reqs.connect(sub_addr); }
 
     let resp =
         alt ctx.socket(zmq::PUB) {
@@ -33,18 +34,21 @@ fn connect(ctx: zmq::context,
           ok(resp) { resp }
         };
     resp.set_identity(sender_id);
-    resp.connect(pub_addr);
+
+    pub_addrs.iter { |pub_addr| resp.connect(pub_addr); }
 
     {
         sender_id: sender_id,
-        sub_addr: sub_addr,
-        pub_addr: pub_addr,
+        sub_addrs: sub_addrs,
+        pub_addrs: pub_addrs,
         reqs: reqs,
         resp: resp
     } as connection
 }
 
 iface connection {
+    fn sub_addrs() -> [str];
+    fn pub_addrs() -> [str];
     fn recv() -> @request;
     fn send(uuid: str, id: [str], body: [u8]);
     fn reply(req: @request, body: [u8]);
@@ -57,6 +61,9 @@ iface connection {
 }
 
 impl of connection for connection_t {
+    fn sub_addrs() -> [str] { self.sub_addrs }
+    fn pub_addrs() -> [str] { self.pub_addrs }
+
     fn recv() -> @request {
         alt self.reqs.recv(0) {
           err(e) { fail e.to_str() }
