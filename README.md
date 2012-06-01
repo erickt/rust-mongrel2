@@ -22,5 +22,5 @@ Install for developers:
     % make
 
     # If you want to run the tests and examples...
-    % make test && ./test
+    % make test && ./mongrel2
     % make example && ./example
