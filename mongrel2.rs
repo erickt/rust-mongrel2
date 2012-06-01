@@ -302,8 +302,8 @@ mod tests {
 
         let connection = connect(ctx,
             "F0D32575-2ABB-4957-BC8B-12DAC8AFF13A",
-            "tcp://127.0.0.1:9998",
-            "tcp://127.0.0.1:9999");
+            ["tcp://127.0.0.1:9998"],
+            ["tcp://127.0.0.1:9999"]);
 
         connection.term();
         ctx.term();

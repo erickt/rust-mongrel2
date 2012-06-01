@@ -3,5 +3,5 @@ config.sqlite
 *.dSYM
 logs/
 run/
-test
+example
 mongrel2
