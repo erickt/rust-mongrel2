@@ -10,45 +10,43 @@ export request;
 
 type connection_t = {
     sender_id: str,
-    sub_addrs: [str],
-    pub_addrs: [str],
-    reqs: zmq::socket,
-    resp: zmq::socket,
+    req_addrs: [str],
+    rep_addrs: [str],
+    req: zmq::socket,
+    rep: zmq::socket,
 };
 
 fn connect(ctx: zmq::context,
           sender_id: str,
-          sub_addrs: [str],
-          pub_addrs: [str]) -> connection {
-    let reqs =
-        alt ctx.socket(zmq::PULL) {
-          err(e) { fail e.to_str() }
-          ok(reqs) { reqs }
-        };
+          req_addrs: [str],
+          rep_addrs: [str]) -> connection {
+    let req = alt ctx.socket(zmq::PULL) {
+      err(e) { fail e.to_str() }
+      ok(req) { req }
+    };
 
-    sub_addrs.iter { |sub_addr| reqs.connect(sub_addr); }
+    req_addrs.iter { |req_addr| req.connect(req_addr); }
 
-    let resp =
-        alt ctx.socket(zmq::PUB) {
-          err(e) { fail e.to_str() }
-          ok(resp) { resp }
-        };
-    resp.set_identity(sender_id);
+    let rep = alt ctx.socket(zmq::PUB) {
+      err(e) { fail e.to_str() }
+      ok(rep) { rep }
+    };
+    rep.set_identity(sender_id);
 
-    pub_addrs.iter { |pub_addr| resp.connect(pub_addr); }
+    rep_addrs.iter { |rep_addr| rep.connect(rep_addr); }
 
     {
         sender_id: sender_id,
-        sub_addrs: sub_addrs,
-        pub_addrs: pub_addrs,
-        reqs: reqs,
-        resp: resp
+        req_addrs: req_addrs,
+        rep_addrs: rep_addrs,
+        req: req,
+        rep: rep
     } as connection
 }
 
 iface connection {
-    fn sub_addrs() -> [str];
-    fn pub_addrs() -> [str];
+    fn req_addrs() -> [str];
+    fn rep_addrs() -> [str];
     fn recv() -> @request;
     fn send(uuid: str, id: [str], body: [u8]);
     fn reply(req: @request, body: [u8]);
@@ -61,11 +59,11 @@ iface connection {
 }
 
 impl of connection for connection_t {
-    fn sub_addrs() -> [str] { self.sub_addrs }
-    fn pub_addrs() -> [str] { self.pub_addrs }
+    fn req_addrs() -> [str] { self.req_addrs }
+    fn rep_addrs() -> [str] { self.rep_addrs }
 
     fn recv() -> @request {
-        alt self.reqs.recv(0) {
+        alt self.req.recv(0) {
           err(e) { fail e.to_str() }
           ok(msg) { parse(msg) }
         }
@@ -78,7 +76,7 @@ impl of connection for connection_t {
             tnetstring::to_bytes(tnetstring::str(id)),
             body
         ], ' ' as u8);
-        alt self.resp.send(msg, 0) {
+        alt self.rep.send(msg, 0) {
           err(e) { fail e.to_str() }
           ok(()) { }
         };
@@ -115,8 +113,8 @@ impl of connection for connection_t {
     }
 
     fn term() {
-        self.reqs.close();
-        self.resp.close();
+        self.req.close();
+        self.rep.close();
     }
 }
 
