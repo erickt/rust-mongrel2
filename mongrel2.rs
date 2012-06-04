@@ -9,7 +9,7 @@ export connection;
 export request;
 
 type connection_t = {
-    sender_id: str,
+    sender_id: option<str>,
     req_addrs: [str],
     rep_addrs: [str],
     req: zmq::socket,
@@ -17,23 +17,39 @@ type connection_t = {
 };
 
 fn connect(ctx: zmq::context,
-          sender_id: str,
+          sender_id: option<str>,
           req_addrs: [str],
           rep_addrs: [str]) -> connection {
     let req = alt ctx.socket(zmq::PULL) {
-      err(e) { fail e.to_str() }
       ok(req) { req }
+      err(e) { fail e.to_str() }
     };
 
-    req_addrs.iter { |req_addr| req.connect(req_addr); }
+    req_addrs.iter { |req_addr|
+        alt req.connect(req_addr) {
+          ok(()) { }
+          err(e) { fail e.to_str() }
+        }
+    }
 
     let rep = alt ctx.socket(zmq::PUB) {
       err(e) { fail e.to_str() }
       ok(rep) { rep }
     };
-    rep.set_identity(sender_id);
 
-    rep_addrs.iter { |rep_addr| rep.connect(rep_addr); }
+    sender_id.iter { |sender_id|
+        alt rep.set_identity(sender_id) {
+          ok(()) { }
+          err(e) { fail e.to_str() }
+        }
+    }
+
+    rep_addrs.iter { |rep_addr|
+        alt rep.connect(rep_addr) {
+          ok(()) { }
+          err(e) { fail e.to_str() }
+        }
+    }
 
     {
         sender_id: sender_id,
@@ -301,7 +317,7 @@ mod tests {
             };
 
         let connection = connect(ctx,
-            "F0D32575-2ABB-4957-BC8B-12DAC8AFF13A",
+            some("F0D32575-2ABB-4957-BC8B-12DAC8AFF13A"),
             ["tcp://127.0.0.1:9998"],
             ["tcp://127.0.0.1:9999"]);
 
