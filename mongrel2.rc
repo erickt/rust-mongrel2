@@ -6,3 +6,12 @@
 use std;
 use zmq;
 use tnetstring;
+
+import result::{ok, err, chain};
+import dvec::{dvec, extensions};
+import std::json;
+import json::to_str;
+import std::map;
+import std::map::hashmap;
+import zmq::{context, socket, to_str};
+import tnetstring::tnetstring;

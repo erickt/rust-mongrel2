@@ -1,10 +1,12 @@
 use std;
+
+import io::println;
+import dvec::{dvec, extensions};
 import std::map;
 import std::map::hashmap;
-import io::println;
 
 use zmq;
-import zmq::{context, error};
+import zmq::{context, to_str};
 
 use mongrel2;
 import mongrel2::connection;
@@ -16,20 +18,22 @@ fn main() {
     };
 
     let conn = mongrel2::connect(ctx,
-        "F0D32575-2ABB-4957-BC8B-12DAC8AFF13A",
+        some("F0D32575-2ABB-4957-BC8B-12DAC8AFF13A"),
         ["tcp://127.0.0.1:9998"],
         ["tcp://127.0.0.1:9999"]);
 
     loop {
         let request = conn.recv();
-        println(#fmt("uuid: %s", request.uuid));
-        println(#fmt("id: %s", request.id));
-        println(#fmt("path: %s", request.path));
+        println(#fmt("uuid: %s", *request.uuid));
+        println(#fmt("id: %s", *request.id));
+        println(#fmt("path: %s", *request.path));
 
-        for request.headers.each {|k,v|
-            println(#fmt("header: %s => %s", k, str::connect(v, " ")));
+        for request.headers.each { |k, vs|
+            for (*vs).each { |v|
+                println(#fmt("header: %s => %s", k, *v));
+            }
         };
-        println(#fmt("body: %s", str::from_bytes(request.body)));
+        println(#fmt("body: %s", str::from_bytes(*request.body)));
 
         conn.reply_http(request,
             200u,
