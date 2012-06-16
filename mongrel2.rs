@@ -97,8 +97,6 @@ impl of connection for connection_t {
 
         let msg = dvec::unwrap(msg);
 
-        #error("%?", msg);
-
         alt self.rep.send(msg, 0) {
           err(e) { fail e.to_str() }
           ok(()) { }
