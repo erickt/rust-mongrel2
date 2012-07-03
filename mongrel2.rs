@@ -4,22 +4,22 @@ export request;
 
 type connection_t = {
     sender_id: option<str>,
-    req_addrs: @[str],
-    rep_addrs: @[str],
+    req_addrs: @~[str],
+    rep_addrs: @~[str],
     req: zmq::socket,
     rep: zmq::socket,
 };
 
 fn connect(ctx: zmq::context,
            +sender_id: option<str>,
-           +req_addrs: [str],
-           +rep_addrs: [str]) -> connection {
+           +req_addrs: ~[str],
+           +rep_addrs: ~[str]) -> connection {
     let req = alt ctx.socket(zmq::PULL) {
       ok(req) { req }
       err(e) { fail e.to_str() }
     };
 
-    req_addrs.iter { |req_addr|
+    do req_addrs.iter |req_addr| {
         alt req.connect(req_addr) {
           ok(()) { }
           err(e) { fail e.to_str() }
@@ -41,7 +41,7 @@ fn connect(ctx: zmq::context,
       }
     }
 
-    for rep_addrs.each { |rep_addr|
+    for rep_addrs.each |rep_addr| {
         alt rep.connect(rep_addr) {
           ok(()) { }
           err(e) { fail e.to_str() }
@@ -60,22 +60,22 @@ fn connect(ctx: zmq::context,
 type header_map = hashmap<str, @dvec<@str>>;
 
 iface connection {
-    fn req_addrs() -> @[str];
-    fn rep_addrs() -> @[str];
+    fn req_addrs() -> @~[str];
+    fn rep_addrs() -> @~[str];
     fn recv() -> @request;
-    fn send(uuid: @str, id: [const str]/&, body: [const u8]/&);
-    fn reply(req: @request, body: [const u8]/&);
+    fn send(uuid: @str, id: &[const str], body: &[const u8]);
+    fn reply(req: @request, body: &[const u8]);
     fn reply_http(req: @request,
                   code: uint,
                   status: str,
                   headers: header_map,
-                  body: [u8]);
+                  body: ~[u8]);
     fn term();
 }
 
 impl of connection for connection_t {
-    fn req_addrs() -> @[str] { self.req_addrs }
-    fn rep_addrs() -> @[str] { self.rep_addrs }
+    fn req_addrs() -> @~[str] { self.req_addrs }
+    fn rep_addrs() -> @~[str] { self.rep_addrs }
 
     fn recv() -> @request {
         alt self.req.recv(0) {
@@ -84,10 +84,10 @@ impl of connection for connection_t {
         }
     }
 
-    fn send(uuid: @str, id: [const str]/&, body: [const u8]/&) {
+    fn send(uuid: @str, id: &[const str], body: &[const u8]) {
         let id = str::bytes(str::connect(id, " "));
         let msg = dvec();
-        str::as_bytes(*uuid) { |uuid|
+        do str::as_bytes(*uuid) |uuid| {
             msg.push_slice(uuid, 0u, uuid.len() - 1u);
         }
         msg.push(' ' as u8);
@@ -103,15 +103,15 @@ impl of connection for connection_t {
         };
     }
 
-    fn reply(req: @request, body: [const u8]/&) {
-        self.send(req.uuid, [copy *req.id], body)
+    fn reply(req: @request, body: &[const u8]) {
+        self.send(req.uuid, ~[copy *req.id], body)
     }
 
     fn reply_http(req: @request,
                   code: uint,
                   status: str,
                   headers: header_map,
-                  body: [u8]) {
+                  body: ~[u8]) {
         let rep = dvec();
         rep.push_all(str::bytes(#fmt("HTTP/1.1 %u ", code)));
         rep.push_all(str::bytes(status));
@@ -120,8 +120,8 @@ impl of connection for connection_t {
         rep.push_all(str::bytes(uint::to_str(vec::len(body), 10u)));
         rep.push_all(str::bytes("\r\n"));
 
-        for headers.each { |key, values|
-            for (*values).each { |value|
+        for headers.each |key, values| {
+            for (*values).each |value| {
                 rep.push_all(str::bytes(key + ": " + *value + "\r\n"));
             };
         }
@@ -142,13 +142,13 @@ type request = {
     id: @str,
     path: @str,
     headers: header_map,
-    body: @[u8],
+    body: @~[u8],
     json_body: option<hashmap<str, json::json>>,
 };
 
 impl request for @request {
     fn is_disconnect() -> bool {
-        self.json_body.map_default(false) { |map|
+        do self.json_body.map_default(false) |map| {
             alt map.find("type") {
               some(json::string(typ)) { *typ == "disconnect" }
               _ { false }
@@ -173,7 +173,7 @@ impl request for @request {
     }
 }
 
-fn parse(msg: [u8]) -> @request {
+fn parse(msg: ~[u8]) -> @request {
     let end = vec::len(msg);
     let (start, uuid) = parse_uuid(msg, 0u, end);
     let (start, id) = parse_id(msg, start, end);
@@ -181,13 +181,13 @@ fn parse(msg: [u8]) -> @request {
     let (headers, body) = parse_rest(msg, start, end);
 
     // Extract out the json body if we have it.
-    let json_body = headers.find("METHOD").chain { |method|
+    let json_body = do headers.find("METHOD").chain |method| {
         if (*method).len() == 1u && *(*method)[0u] == "JSON" {
-          alt json::from_str(str::from_bytes(*body)) {
-            ok(json::dict(map)) { some(map) }
-            ok(_) { fail "json body is not a dictionary" }
-            err(e) { fail #fmt("invalid JSON string: %s", e.to_str()); }
-          }
+            alt json::from_str(str::from_bytes(copy *body)) {
+              ok(json::dict(map)) { some(map) }
+              ok(_) { fail "json body is not a dictionary" }
+              err(e) { fail #fmt("invalid JSON string: %s", e.to_str()); }
+            }
         } else { none }
     };
 
@@ -201,28 +201,28 @@ fn parse(msg: [u8]) -> @request {
     }
 }
 
-fn parse_uuid(msg: [u8], start: uint, end: uint) -> (uint, str) {
-    alt vec::position_between(msg, start, end) { |c| c == ' ' as u8 } {
+fn parse_uuid(msg: ~[u8], start: uint, end: uint) -> (uint, str) {
+    alt vec::position_between(msg, start, end, |c| c == ' ' as u8) {
         none { fail "invalid sender uuid" }
         some(i) { (i + 1u, str::from_bytes(vec::slice(msg, 0u, i))) }
     }
 }
 
-fn parse_id(msg: [u8], start: uint, end: uint) -> (uint, str) {
-    alt vec::position_between(msg, start, end) { |c| c == ' ' as u8 } {
+fn parse_id(msg: ~[u8], start: uint, end: uint) -> (uint, str) {
+    alt vec::position_between(msg, start, end, |c| c == ' ' as u8) {
       none { fail "invalid connection id" }
       some(i) { (i + 1u, str::from_bytes(vec::slice(msg, start, i))) }
     }
 }
 
-fn parse_path(msg: [u8], start: uint, end: uint) -> (uint, str) {
-    alt vec::position_between(msg, start, end) { |c| c == ' ' as u8 } {
+fn parse_path(msg: ~[u8], start: uint, end: uint) -> (uint, str) {
+    alt vec::position_between(msg, start, end, |c| c == ' ' as u8) {
       none { fail "invalid path" }
       some(i) { (i + 1u, str::from_bytes(vec::slice(msg, start, i))) }
     }
 }
 
-fn parse_rest(msg: [u8], start: uint, end: uint) -> (header_map, @[u8]) {
+fn parse_rest(msg: ~[u8], start: uint, end: uint) -> (header_map, @~[u8]) {
     let rest = vec::slice(msg, start, end);
 
     let (headers, rest) = tnetstring::from_bytes(rest);
@@ -245,8 +245,8 @@ fn parse_headers(tns: tnetstring) -> header_map {
 
     alt tns {
       tnetstring::map(map) {
-        for map.each { |key, value|
-            let key = str::from_bytes(key);
+        for map.each |key, value| {
+            let key = str::from_bytes(copy key);
             let values = alt headers.find(key) {
               some(values) { values }
               none {
@@ -257,12 +257,14 @@ fn parse_headers(tns: tnetstring) -> header_map {
             };
 
             alt value {
-              tnetstring::str(v) { (*values).push(@str::from_bytes(*v)) }
+              tnetstring::str(v) {
+                (*values).push(@str::from_bytes(copy *v))
+              }
               tnetstring::vec(vs) {
-                for (*vs).each { |v|
+                for (*vs).each |v| {
                     alt v {
                       tnetstring::str(v) {
-                        (*values).push(@str::from_bytes(*v))
+                        (*values).push(@str::from_bytes(copy *v))
                       }
                       _ { fail "header value is not a string"; }
                     }
@@ -275,10 +277,10 @@ fn parse_headers(tns: tnetstring) -> header_map {
 
       // Fall back onto json if we got a string.
       tnetstring::str(bytes) {
-        alt json::from_str(str::from_bytes(*bytes)) {
+        alt json::from_str(str::from_bytes(copy *bytes)) {
           err(e) { fail "invalid JSON string"; }
           ok(json::dict(map)) {
-            for map.each { |key, value|
+            for map.each |key, value| {
                 let values = alt headers.find(key) {
                   some(values) { values }
                   none {
@@ -291,7 +293,7 @@ fn parse_headers(tns: tnetstring) -> header_map {
                 alt value {
                   json::string(v) { (*values).push(v) }
                   json::list(vs) {
-                    for (*vs).each { |v|
+                    for (*vs).each |v| {
                       alt v {
                         json::string(v) { (*values).push(v) }
                         _ { fail "header value is not a string"; }
@@ -312,7 +314,7 @@ fn parse_headers(tns: tnetstring) -> header_map {
     headers
 }
 
-fn parse_body(tns: tnetstring) -> @[u8] {
+fn parse_body(tns: tnetstring) -> @~[u8] {
     alt tns {
       tnetstring::str(body) { body }
       _ { fail "invalid body" }
@@ -331,8 +333,8 @@ mod tests {
 
         let connection = connect(ctx,
             some("F0D32575-2ABB-4957-BC8B-12DAC8AFF13A"),
-            ["tcp://127.0.0.1:9998"],
-            ["tcp://127.0.0.1:9999"]);
+            ~["tcp://127.0.0.1:9998"],
+            ~["tcp://127.0.0.1:9999"]);
 
         connection.term();
         ctx.term();

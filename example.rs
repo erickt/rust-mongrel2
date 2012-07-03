@@ -19,8 +19,8 @@ fn main() {
 
     let conn = mongrel2::connect(ctx,
         some("F0D32575-2ABB-4957-BC8B-12DAC8AFF13A"),
-        ["tcp://127.0.0.1:9998"],
-        ["tcp://127.0.0.1:9999"]);
+        ~["tcp://127.0.0.1:9998"],
+        ~["tcp://127.0.0.1:9999"]);
 
     loop {
         let request = conn.recv();
@@ -28,12 +28,12 @@ fn main() {
         println(#fmt("id: %s", *request.id));
         println(#fmt("path: %s", *request.path));
 
-        for request.headers.each { |k, vs|
-            for (*vs).each { |v|
+        for request.headers.each |k, vs| {
+            for (*vs).each |v| {
                 println(#fmt("header: %s => %s", k, *v));
             }
         };
-        println(#fmt("body: %s", str::from_bytes(*request.body)));
+        println(#fmt("body: %s", str::from_bytes(copy *request.body)));
 
         conn.reply_http(request,
             200u,
