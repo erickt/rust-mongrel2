@@ -8,8 +8,8 @@ example: all
 	rustc -L . example.rs
 
 deps:
-	cargo install -g zmq
-	cargo install -g tnetstring
+	cargo install zmq
+	cargo install tnetstring
 
 clean:
 	rm -rf mongrel2 example *.so *.dylib *.dSYM

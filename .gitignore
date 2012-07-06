@@ -5,3 +5,4 @@ logs/
 run/
 example
 mongrel2
+.cargo
