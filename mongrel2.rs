@@ -62,14 +62,16 @@ type header_map = hashmap<str, @dvec<@str>>;
 iface connection {
     fn req_addrs() -> @~[str];
     fn rep_addrs() -> @~[str];
-    fn recv() -> @request;
-    fn send(uuid: @str, id: &[const str], body: &[const u8]);
-    fn reply(req: @request, body: &[const u8]);
+    fn recv() -> result<@request, @str>;
+    fn send(uuid: @str,
+            id: &[const str],
+            body: &[const u8]) -> result<(), @str>;
+    fn reply(req: @request, body: &[const u8]) -> result<(), @str>;
     fn reply_http(req: @request,
                   code: uint,
                   status: str,
                   headers: header_map,
-                  body: ~[u8]);
+                  body: ~[u8]) -> result<(), @str>;
     fn term();
 }
 
@@ -77,14 +79,16 @@ impl of connection for connection_t {
     fn req_addrs() -> @~[str] { self.req_addrs }
     fn rep_addrs() -> @~[str] { self.rep_addrs }
 
-    fn recv() -> @request {
+    fn recv() -> result<@request, @str> {
         alt self.req.recv(0) {
-          err(e) { fail e.to_str() }
+          err(e) { err(@e.to_str()) }
           ok(msg) { parse(msg) }
         }
     }
 
-    fn send(uuid: @str, id: &[const str], body: &[const u8]) {
+    fn send(uuid: @str,
+            id: &[const str],
+            body: &[const u8]) -> result<(), @str> {
         let id = str::bytes(str::connect(id, " "));
         let msg = dvec();
         do str::as_bytes(*uuid) |uuid| {
@@ -98,12 +102,12 @@ impl of connection for connection_t {
         let msg = dvec::unwrap(msg);
 
         alt self.rep.send(msg, 0) {
-          err(e) { fail e.to_str() }
-          ok(()) { }
-        };
+          err(e) { err(@e.to_str()) }
+          ok(()) { ok(()) }
+        }
     }
 
-    fn reply(req: @request, body: &[const u8]) {
+    fn reply(req: @request, body: &[const u8]) -> result<(), @str> {
         self.send(req.uuid, ~[copy *req.id], body)
     }
 
@@ -111,7 +115,7 @@ impl of connection for connection_t {
                   code: uint,
                   status: str,
                   headers: header_map,
-                  body: ~[u8]) {
+                  body: ~[u8]) -> result<(), @str> {
         let rep = dvec();
         rep.push_all(str::bytes(#fmt("HTTP/1.1 %u ", code)));
         rep.push_all(str::bytes(status));
@@ -128,7 +132,7 @@ impl of connection for connection_t {
         rep.push_all(str::bytes("\r\n"));
         rep.push_all(body);
 
-        self.reply(req, dvec::unwrap(rep));
+        self.reply(req, dvec::unwrap(rep))
     }
 
     fn term() {
@@ -173,74 +177,111 @@ impl request for @request {
     }
 }
 
-fn parse(msg: ~[u8]) -> @request {
-    let end = vec::len(msg);
-    let (start, uuid) = parse_uuid(msg, 0u, end);
-    let (start, id) = parse_id(msg, start, end);
-    let (start, path) = parse_path(msg, start, end);
-    let (headers, body) = parse_rest(msg, start, end);
+fn parse(msg: ~[u8]) -> result<@request, @str> {
+    let end = msg.len();
 
-    // Extract out the json body if we have it.
-    let json_body = do headers.find("METHOD").chain |method| {
-        if (*method).len() == 1u && *(*method)[0u] == "JSON" {
-            alt json::from_str(str::from_bytes(copy *body)) {
-              ok(json::dict(map)) { some(map) }
-              ok(_) { fail "json body is not a dictionary" }
-              err(e) { fail #fmt("invalid JSON string: %s", e.to_str()); }
-            }
-        } else { none }
+    let (start, uuid) = alt parse_uuid(msg, 0u, end) {
+      ok((start, uuid)) { (start, uuid) }
+      err(e) { ret err(e); }
     };
 
-    @{
-        uuid: @uuid,
-        id: @id,
-        path: @path,
+    let (start, id) = alt parse_id(msg, start, end) {
+      ok(value) { value }
+      err(e) { ret err(e); }
+    };
+
+    let (start, path) = alt parse_path(msg, start, end) {
+      ok(value) { value }
+      err(e) { ret err(e); }
+    };
+
+    let (headers, body) = alt parse_rest(msg, start, end) {
+      ok(value) { value }
+      err(e) { ret err(e); }
+    };
+
+    // Extract out the json body if we have it.
+    let json_body = alt headers.find("METHOD") {
+      none { none }
+      some(method) {
+        if method.len() == 1u && *method[0u] == "JSON" {
+            alt json::from_str(str::from_bytes(copy *body)) {
+              ok(json::dict(map)) { some(map) }
+              ok(_) { ret err(@"json body is not a dictionary"); }
+              err(e) { ret err(@#fmt("invalid JSON string: %s", e.to_str())); }
+            }
+        } else { none }
+      }
+    };
+
+    ok(@{
+        uuid: uuid,
+        id: id,
+        path: path,
         headers: headers,
         body: body,
         json_body: json_body
-    }
+    })
 }
 
-fn parse_uuid(msg: ~[u8], start: uint, end: uint) -> (uint, str) {
+fn parse_uuid(msg: ~[u8],
+              start: uint,
+              end: uint) -> result<(uint, @str), @str> {
     alt vec::position_between(msg, start, end, |c| c == ' ' as u8) {
-        none { fail "invalid sender uuid" }
-        some(i) { (i + 1u, str::from_bytes(vec::slice(msg, 0u, i))) }
+        none { err(@"invalid sender uuid") }
+        some(i) { ok((i + 1u, @str::from_bytes(vec::slice(msg, 0u, i)))) }
     }
 }
 
-fn parse_id(msg: ~[u8], start: uint, end: uint) -> (uint, str) {
+fn parse_id(msg: ~[u8],
+            start: uint,
+            end: uint) -> result<(uint, @str), @str> {
     alt vec::position_between(msg, start, end, |c| c == ' ' as u8) {
-      none { fail "invalid connection id" }
-      some(i) { (i + 1u, str::from_bytes(vec::slice(msg, start, i))) }
+      none { err(@"invalid connection id") }
+      some(i) { ok((i + 1u, @str::from_bytes(vec::slice(msg, start, i)))) }
     }
 }
 
-fn parse_path(msg: ~[u8], start: uint, end: uint) -> (uint, str) {
+fn parse_path(msg: ~[u8],
+              start: uint,
+              end: uint) -> result<(uint, @str), @str> {
     alt vec::position_between(msg, start, end, |c| c == ' ' as u8) {
-      none { fail "invalid path" }
-      some(i) { (i + 1u, str::from_bytes(vec::slice(msg, start, i))) }
+      none { err(@"invalid path") }
+      some(i) { ok((i + 1u, @str::from_bytes(vec::slice(msg, start, i)))) }
     }
 }
 
-fn parse_rest(msg: ~[u8], start: uint, end: uint) -> (header_map, @~[u8]) {
+fn parse_rest(msg: ~[u8],
+              start: uint,
+              end: uint) -> result<(header_map, @~[u8]), @str> {
     let rest = vec::slice(msg, start, end);
 
     let (headers, rest) = tnetstring::from_bytes(rest);
     let headers = alt headers {
-      some(headers) { parse_headers(headers) }
-      none { fail "empty headers" }
+      none { ret err(@"empty headers"); }
+      some(headers) {
+        alt parse_headers(headers) {
+          err(e) { ret err(e); }
+          ok(headers) { headers }
+        }
+      }
     };
 
     let (body, _) = tnetstring::from_bytes(rest);
     let body = alt body {
-      some(body) { parse_body(body) }
-      none { fail "empty body" }
+      none { ret err(@"empty body"); }
+      some(body) {
+        alt parse_body(body) {
+          err(e) { ret err(e); }
+          ok(body) { body }
+        }
+      }
     };
 
-    (headers, body)
+    ok((headers, body))
 }
 
-fn parse_headers(tns: tnetstring) -> header_map {
+fn parse_headers(tns: tnetstring) -> result<header_map, @str> {
     let headers: header_map = map::str_hash();
 
     alt tns {
@@ -266,11 +307,11 @@ fn parse_headers(tns: tnetstring) -> header_map {
                       tnetstring::str(v) {
                         (*values).push(@str::from_bytes(copy *v))
                       }
-                      _ { fail "header value is not a string"; }
+                      _ { ret err(@"header value is not a string"); }
                     }
                 }
               }
-              _ { fail "header value is not string"; }
+              _ { ret err(@"header value is not string"); }
             }
         }
       }
@@ -278,7 +319,7 @@ fn parse_headers(tns: tnetstring) -> header_map {
       // Fall back onto json if we got a string.
       tnetstring::str(bytes) {
         alt json::from_str(str::from_bytes(copy *bytes)) {
-          err(e) { fail "invalid JSON string"; }
+          err(e) { ret err(@"invalid JSON string"); }
           ok(json::dict(map)) {
             for map.each |key, value| {
                 let values = alt headers.find(key) {
@@ -296,28 +337,28 @@ fn parse_headers(tns: tnetstring) -> header_map {
                     for (*vs).each |v| {
                       alt v {
                         json::string(v) { (*values).push(v) }
-                        _ { fail "header value is not a string"; }
+                        _ { ret err(@"header value is not a string"); }
                       }
                     }
                   }
-                  _ { fail "header value is not string"; }
+                  _ { ret err(@"header value is not string"); }
                 }
             }
           }
-          ok(_) { fail "header is not a dictionary"; }
+          ok(_) { ret err(@"header is not a dictionary"); }
         }
       }
 
-      _ { fail "invalid header"; }
+      _ { ret err(@"invalid header"); }
     }
 
-    headers
+    ok(headers)
 }
 
-fn parse_body(tns: tnetstring) -> @~[u8] {
+fn parse_body(tns: tnetstring) -> result<@~[u8], @str> {
     alt tns {
-      tnetstring::str(body) { body }
-      _ { fail "invalid body" }
+      tnetstring::str(body) { ok(body) }
+      _ { err(@"invalid body") }
     }
 }
 
@@ -343,7 +384,8 @@ mod tests {
     #[test]
     fn test_request_parse() {
         let request = parse(
-            str::bytes("abCD-123 56 / 13:{\"foo\":\"bar\"},11:hello world,"));
+            str::bytes("abCD-123 56 / 13:{\"foo\":\"bar\"},11:hello world,")
+        ).get();
 
         assert *request.uuid == "abCD-123";
         assert *request.id == "56";
