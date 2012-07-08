@@ -23,7 +23,7 @@ fn main() {
         ~["tcp://127.0.0.1:9999"]);
 
     loop {
-        let request = conn.recv();
+        let request = conn.recv().get();
         println(#fmt("uuid: %s", *request.uuid));
         println(#fmt("id: %s", *request.id));
         println(#fmt("path: %s", *request.path));

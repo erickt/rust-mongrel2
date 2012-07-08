@@ -14,10 +14,9 @@ fn connect(ctx: zmq::context,
            +sender_id: option<str>,
            +req_addrs: ~[str],
            +rep_addrs: ~[str]) -> connection {
-    let req = alt ctx.socket(zmq::PULL) {
-      ok(req) { req }
-      err(e) { fail e.to_str() }
-    };
+    let req = ctx.socket(zmq::PULL);
+    if req.is_err() { fail req.get_err().to_str() };
+    let req = result::unwrap(req);
 
     do req_addrs.iter |req_addr| {
         alt req.connect(req_addr) {
@@ -26,10 +25,9 @@ fn connect(ctx: zmq::context,
         }
     }
 
-    let rep = alt ctx.socket(zmq::PUB) {
-      err(e) { fail e.to_str() }
-      ok(rep) { rep }
-    };
+    let rep = ctx.socket(zmq::PUB);
+    if rep.is_err() { fail rep.get_err().to_str() };
+    let rep = result::unwrap(rep);
 
     alt sender_id {
       none { }
