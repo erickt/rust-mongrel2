@@ -3,15 +3,14 @@
        uuid = "f1bdda2b-0db7-42df-a40e-0decd4d56bb0")];
 #[crate_type = "lib"];
 
-use std;
-use zmq;
-use tnetstring;
+extern mod std;
+extern mod zmq;
+extern mod tnetstring;
 
-import result::{result, ok, err};
-import dvec::{dvec, extensions};
-import std::json;
-import json::to_str;
-import std::map;
-import std::map::hashmap;
-import zmq::{context, socket, to_str};
-import tnetstring::tnetstring;
+use dvec::DVec;
+use send_map::linear::LinearMap;
+use std::json;
+use std::json::{Json, ToStr};
+
+use zmq::{Context, Socket, to_str};
+use tnetstring::TNetString;

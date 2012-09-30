@@ -21,6 +21,16 @@ Install for developers:
     % make deps
     % make
 
-    # If you want to run the tests and examples...
+Running the tests:
     % make test && ./mongrel2
+
+Running the example:
+    # In one shell do:
+    % m2sh load --db config.sqlite --config example.conf
+    % m2sh start --db config.sqlite --host localhost
+
+    # In another shell do:
     % make example && ./example
+
+    # In a third shell do:
+    % curl http://localhost:3000
