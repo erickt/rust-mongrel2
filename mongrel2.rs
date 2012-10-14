@@ -1,7 +1,3 @@
-export connect;
-export Connection;
-export Request;
-
 use io::ReaderUtil;
 
 pub struct Connection {
@@ -91,11 +87,11 @@ pub impl Connection {
         }
     }
 
-    fn reply(req: Request, body: &[u8]) -> Result<(), ~str> {
+    fn reply(req: &Request, body: &[u8]) -> Result<(), ~str> {
         self.send(req.uuid, ~[copy req.id], body)
     }
 
-    fn reply_http(req: Request,
+    fn reply_http(req: &Request,
                   code: uint,
                   status: &str,
                   headers: Headers,

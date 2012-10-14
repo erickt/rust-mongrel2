@@ -26,7 +26,7 @@ fn main() {
         };
         io::println(#fmt("body: %s", str::from_bytes(request.body)));
 
-        conn.reply_http(request,
+        conn.reply_http(&request,
             200u,
             "OK",
             mongrel2::Headers(),
