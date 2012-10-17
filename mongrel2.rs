@@ -15,8 +15,8 @@ pub fn connect(
     rep_addrs: ~[~str]
 ) -> Connection {
     let req = match ctx.socket(zmq::PULL) {
-        Ok(move req) => req,
-        Err(e) => fail e.to_str(), 
+        Ok(move req) => move req,
+        Err(e) => fail e.to_str(),
     };
 
     for req_addrs.each |req_addr| {
@@ -27,7 +27,7 @@ pub fn connect(
     }
 
     let rep = match ctx.socket(zmq::PUB) {
-        Ok(move rep) => rep,
+        Ok(move rep) => move rep,
         Err(e) => fail e.to_str(),
     };
 
@@ -52,8 +52,8 @@ pub fn connect(
         sender_id: sender_id,
         req_addrs: @req_addrs,
         rep_addrs: @rep_addrs,
-        req: req,
-        rep: rep
+        req: move req,
+        rep: move rep
     }
 }
 
