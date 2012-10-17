@@ -33,4 +33,4 @@ Running the example:
     % make example && ./example
 
     # In a third shell do:
-    % curl http://localhost:3000
+    % curl http://localhost:6767
