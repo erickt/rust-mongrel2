@@ -22,9 +22,11 @@ Install for developers:
     % make
 
 Running the tests:
+
     % make test && ./mongrel2
 
 Running the example:
+
     # In one shell do:
     % m2sh load --db config.sqlite --config example.conf
     % m2sh start --db config.sqlite --host localhost
