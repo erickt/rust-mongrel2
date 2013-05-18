@@ -119,7 +119,7 @@ pub impl Connection {
         rep.push_all(str::to_bytes(status));
         rep.push_all(str::to_bytes("\r\n"));
         rep.push_all(str::to_bytes("Content-Length: "));
-        rep.push_all(str::to_bytes(uint::to_str(vec::len(body), 10u)));
+        rep.push_all(str::to_bytes(uint::to_str(vec::len(body))));
         rep.push_all(str::to_bytes("\r\n"));
 
         for headers.each |key, values| {
@@ -157,7 +157,7 @@ pub struct Request {
 pub impl Request {
     fn is_disconnect(self) -> bool {
         do self.json_body.map_default(false) |map| {
-            match map.find_ref(&~"type") {
+            match map.find(&~"type") {
               Some(&json::String(ref typ)) => *typ == ~"disconnect",
               _ => false,
             }
@@ -165,14 +165,14 @@ pub impl Request {
     }
 
     fn should_close(self) -> bool {
-        match self.headers.find_ref(&~"connection") {
+        match self.headers.find(&~"connection") {
           None => { },
           Some(conn) => {
             if conn.len() == 1u && conn[0u] == ~"close" { return true; }
           }
         }
 
-        match self.headers.find_ref(&~"VERSION") {
+        match self.headers.find(&~"VERSION") {
           None => false,
           Some(version) => {
             version.len() == 1u && version[0u] == ~"HTTP/1.0"
@@ -212,7 +212,7 @@ fn parse_reader(rdr: @io::Reader) -> Result<Request, ~str> {
     };
 
     // Extract out the json body if we have it.
-    let json_body = match headers.find_ref(&~"METHOD") {
+    let json_body = match headers.find(&~"METHOD") {
       None => None,
       Some(method) => {
         if method.len() == 1u && method[0u] == ~"JSON" {
