@@ -14,7 +14,7 @@ use std::json::{Json, ToStr};
 use zmq::{Context, Socket, to_str};
 use tnetstring::TNetString;
 
-use io::ReaderUtil;
+use core::io::ReaderUtil;
 
 pub struct Connection {
     sender_id: Option<~str>,
@@ -185,7 +185,7 @@ fn parse(bytes: &[u8]) -> Result<Request, ~str> {
     io::with_bytes_reader(bytes, parse_reader)
 }
 
-fn parse_reader(rdr: io::Reader) -> Result<Request, ~str> {
+fn parse_reader(rdr: @io::Reader) -> Result<Request, ~str> {
     let uuid = match parse_uuid(rdr) {
         Ok(uuid) => uuid,
         Err(e) => return Err(e),
@@ -236,7 +236,7 @@ fn parse_reader(rdr: io::Reader) -> Result<Request, ~str> {
     })
 }
 
-fn read_str(rdr: io::Reader) -> Option<~str> {
+fn read_str(rdr: @io::Reader) -> Option<~str> {
     let mut s = ~"";
 
     while !rdr.eof() {
@@ -251,28 +251,28 @@ fn read_str(rdr: io::Reader) -> Option<~str> {
     None
 }
 
-fn parse_uuid(rdr: io::Reader) -> Result<~str, ~str> {
+fn parse_uuid(rdr: @io::Reader) -> Result<~str, ~str> {
     match read_str(rdr) {
         Some(s) => Ok(s),
         None => Err(~"invalid sender uuid"),
     }
 }
 
-fn parse_id(rdr: io::Reader) -> Result<~str, ~str> {
+fn parse_id(rdr: @io::Reader) -> Result<~str, ~str> {
     match read_str(rdr) {
         Some(s) => Ok(s),
         None => Err(~"invalid connection id"),
     }
 }
 
-fn parse_path(rdr: io::Reader) -> Result<~str, ~str> {
+fn parse_path(rdr: @io::Reader) -> Result<~str, ~str> {
     match read_str(rdr) {
         Some(s) => Ok(s),
         None => Err(~"invalid path"),
     }
 }
 
-fn parse_headers(rdr: io::Reader) -> Result<Headers, ~str> {
+fn parse_headers(rdr: @io::Reader) -> Result<Headers, ~str> {
     let tns = match tnetstring::from_reader(rdr) {
         None => return Err(~"empty headers"),
         Some(tns) => tns,
@@ -352,7 +352,7 @@ fn parse_json_headers(map: ~json::Object) -> Result<Headers, ~str> {
     Ok(headers)
 }
 
-fn parse_body(rdr: io::Reader) -> Result<~[u8], ~str> {
+fn parse_body(rdr: @io::Reader) -> Result<~[u8], ~str> {
     match tnetstring::from_reader(rdr) {
         None => Err(~"empty body"),
         Some(tns) => {
