@@ -33,19 +33,19 @@ pub fn connect(
 ) -> Connection {
     let req = match ctx.socket(zmq::PULL) {
         Ok(req) => req,
-        Err(e) => fail e.to_str(), 
+        Err(e) => fail!(e.to_str()),
     };
 
     for req_addrs.each |req_addr| {
         match req.connect(*req_addr) {
           Ok(()) => { },
-          Err(e) => fail e.to_str(),
+          Err(e) => fail!(e.to_str()),
         }
     }
 
     let rep = match ctx.socket(zmq::PUB) {
         Ok(rep) => rep,
-        Err(e) => fail e.to_str(),
+        Err(e) => fail!(e.to_str()),
     };
 
     match sender_id {
@@ -53,7 +53,7 @@ pub fn connect(
         Some(ref sender_id) => {
             match rep.set_identity(str::as_bytes_slice(*sender_id)) {
                 Ok(()) => { },
-                Err(e) => fail e.to_str(),
+                Err(e) => fail!(e.to_str()),
             }
         }
     }
@@ -61,7 +61,7 @@ pub fn connect(
     for rep_addrs.each |rep_addr| {
         match rep.connect(*rep_addr) {
             Ok(()) => { },
-            Err(e) => fail e.to_str(),
+            Err(e) => fail!(e.to_str()),
         }
     }
 
