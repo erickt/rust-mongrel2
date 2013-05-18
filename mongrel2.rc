@@ -384,10 +384,10 @@ mod tests {
             str::to_bytes("abCD-123 56 / 13:{\"foo\":\"bar\"},11:hello world,")
         ));
 
-        assert request.uuid == ~"abCD-123";
-        assert request.id == ~"56";
-        assert request.headers.len() == 1u;
+        assert!(request.uuid == ~"abCD-123");
+        assert!(request.id == ~"56");
+        assert!(request.headers.len() == 1u);
         request.headers.get_ref(&~"foo")[0u] == ~"bar";
-        assert request.body == str::to_bytes("hello world");
+        assert!(request.body == str::to_bytes("hello world"));
     }
 }
