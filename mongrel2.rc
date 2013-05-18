@@ -74,17 +74,18 @@ pub fn connect(
 }
 
 pub impl Connection {
-    fn req_addrs() -> @~[~str] { self.req_addrs }
-    fn rep_addrs() -> @~[~str] { self.rep_addrs }
+    fn req_addrs(self) -> @~[~str] { self.req_addrs }
+    fn rep_addrs(self) -> @~[~str] { self.rep_addrs }
 
-    fn recv() -> Result<Request, ~str> {
+    fn recv(self) -> Result<Request, ~str> {
         match self.req.recv(0) {
             Err(e) => Err(e.to_str()),
             Ok(msg) => msg.with_bytes(|bytes| parse(bytes)),
         }
     }
 
-    fn send(uuid: &str,
+    fn send(self,
+            uuid: &str,
             id: &[~str],
             body: &[u8]) -> Result<(), ~str> {
         let id = str::to_bytes(str::connect(id, " "));
@@ -103,11 +104,12 @@ pub impl Connection {
         }
     }
 
-    fn reply(req: &Request, body: &[u8]) -> Result<(), ~str> {
+    fn reply(self, req: &Request, body: &[u8]) -> Result<(), ~str> {
         self.send(req.uuid, ~[copy req.id], body)
     }
 
-    fn reply_http(req: &Request,
+    fn reply_http(self,
+                  req: &Request,
                   code: uint,
                   status: &str,
                   headers: Headers,
@@ -131,7 +133,7 @@ pub impl Connection {
         self.reply(req, rep)
     }
 
-    fn term() {
+    fn term(self) {
         self.req.close();
         self.rep.close();
     }
@@ -153,7 +155,7 @@ pub struct Request {
 }
 
 pub impl Request {
-    fn is_disconnect() -> bool {
+    fn is_disconnect(self) -> bool {
         do self.json_body.map_default(false) |map| {
             match map.find_ref(&~"type") {
               Some(&json::String(ref typ)) => *typ == ~"disconnect",
@@ -162,7 +164,7 @@ pub impl Request {
         }
     }
 
-    fn should_close() -> bool {
+    fn should_close(self) -> bool {
         match self.headers.find_ref(&~"connection") {
           None => { },
           Some(conn) => {
