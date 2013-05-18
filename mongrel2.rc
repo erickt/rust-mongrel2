@@ -7,8 +7,7 @@ extern mod std;
 extern mod zmq;
 extern mod tnetstring;
 
-use dvec::DVec;
-use send_map::linear::LinearMap;
+use core::hashmap::HashMap;
 use std::json;
 use std::json::{Json, ToStr};
 
@@ -113,7 +112,7 @@ pub impl Connection {
                   status: &str,
                   headers: Headers,
                   body: &[u8]) -> Result<(), ~str> {
-        let rep = DVec();
+        let mut rep = ~[];
         rep.push_all(str::to_bytes(fmt!("HTTP/1.1 %u ", code)));
         rep.push_all(str::to_bytes(status));
         rep.push_all(str::to_bytes("\r\n"));
@@ -129,7 +128,7 @@ pub impl Connection {
         rep.push_all(str::to_bytes("\r\n"));
         rep.push_all(body);
 
-        self.reply(req, dvec::unwrap(rep))
+        self.reply(req, rep)
     }
 
     fn term() {
@@ -138,10 +137,10 @@ pub impl Connection {
     }
 }
 
-pub type Headers = LinearMap<~str, ~[~str]>;
+pub type Headers = HashMap<~str, ~[~str]>;
 
 pub fn Headers() -> Headers {
-    LinearMap()
+    HashMap::new()
 }
 
 pub struct Request {
@@ -294,7 +293,7 @@ fn parse_headers(rdr: io::Reader) -> Result<Headers, ~str> {
 }
 
 fn parse_tnetstring_headers(map: tnetstring::Map) -> Result<Headers, ~str> {
-    let mut headers = LinearMap();
+    let mut headers = HashMap::new();
 
     for map.each |key, value| {
         let key = str::from_bytes(*key);
@@ -324,7 +323,7 @@ fn parse_tnetstring_headers(map: tnetstring::Map) -> Result<Headers, ~str> {
 }
 
 fn parse_json_headers(map: ~json::Object) -> Result<Headers, ~str> {
-    let mut headers = LinearMap();
+    let mut headers = HashMap::new();
 
     for map.each |key, value| {
         let mut values = match headers.pop(key) {
