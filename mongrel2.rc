@@ -133,7 +133,7 @@ pub impl Connection {
         self.reply(req, rep)
     }
 
-    fn term(self) {
+    fn term (&mut self) {
         self.req.close();
         self.rep.close();
     }
