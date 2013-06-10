@@ -3,18 +3,17 @@
        uuid = "f1bdda2b-0db7-42df-a40e-0decd4d56bb0")];
 #[crate_type = "lib"];
 
-extern mod std;
+extern mod extra;
 extern mod zmq;
 extern mod tnetstring;
 
-use core::hashmap::HashMap;
-use std::json;
-use std::json::{Json, ToStr};
+use std::hashmap::HashMap;
+use std::{io, str, uint};
+use extra::json;
+use extra::json::ToStr;
 
-use zmq::{Context, Socket, to_str};
-use tnetstring::TNetString;
-
-use core::io::ReaderUtil;
+//use zmq::{Context, Socket};
+//use tnetstring::TNetString;
 
 pub struct Connection {
     sender_id: Option<~str>,
@@ -73,11 +72,11 @@ pub fn connect(
     }
 }
 
-pub impl Connection {
+impl Connection {
     fn req_addrs(self) -> @~[~str] { self.req_addrs }
     fn rep_addrs(self) -> @~[~str] { self.rep_addrs }
 
-    fn recv(self) -> Result<Request, ~str> {
+    unsafe fn recv(self) -> Result<Request, ~str> {
         match self.req.recv(0) {
             Err(e) => Err(e.to_str()),
             Ok(msg) => msg.with_bytes(|bytes| parse(bytes)),
@@ -105,7 +104,7 @@ pub impl Connection {
     }
 
     fn reply(self, req: &Request, body: &[u8]) -> Result<(), ~str> {
-        self.send(req.uuid, ~[copy req.id], body)
+        self.send(req.uuid, [copy req.id], body)
     }
 
     fn reply_http(self,
@@ -119,7 +118,7 @@ pub impl Connection {
         rep.push_all(str::to_bytes(status));
         rep.push_all(str::to_bytes("\r\n"));
         rep.push_all(str::to_bytes("Content-Length: "));
-        rep.push_all(str::to_bytes(uint::to_str(vec::len(body))));
+        rep.push_all(str::to_bytes(uint::to_str(body.len())));
         rep.push_all(str::to_bytes("\r\n"));
 
         for headers.each |key, values| {
@@ -154,7 +153,7 @@ pub struct Request {
     json_body: Option<~json::Object>,
 }
 
-pub impl Request {
+impl Request {
     fn is_disconnect(self) -> bool {
         do self.json_body.map_default(false) |map| {
             match map.find(&~"type") {
@@ -364,31 +363,32 @@ fn parse_body(rdr: @io::Reader) -> Result<~[u8], ~str> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test() {
-        let ctx = result::unwrap(zmq::init(1));
+#[test]
+fn test() {
+    let ctx = result::unwrap(zmq::init(1));
 
-        let connection = connect(ctx,
-            Some(~"F0D32575-2ABB-4957-BC8B-12DAC8AFF13A"),
-            ~[~"tcp://127.0.0.1:9998"],
-            ~[~"tcp://127.0.0.1:9999"]);
+    let mut connection = connect(ctx,
+        Some(~"F0D32575-2ABB-4957-BC8B-12DAC8AFF13A"),
+        ~[~"tcp://127.0.0.1:9998"],
+        ~[~"tcp://127.0.0.1:9999"]);
 
-        connection.term();
-        ctx.term();
-    }
+    connection.term();
+    ctx.term();
+}
 
-    #[test]
-    fn test_request_parse() {
-        let request = result::unwrap(parse(
-            str::to_bytes("abCD-123 56 / 13:{\"foo\":\"bar\"},11:hello world,")
-        ));
+#[test]
+fn test_request_parse() {
+    let request = result::unwrap(parse(
+        str::to_bytes("abCD-123 56 / 13:{\"foo\":\"bar\"},11:hello world,")
+    ));
 
-        assert!(request.uuid == ~"abCD-123");
-        assert!(request.id == ~"56");
-        assert!(request.headers.len() == 1u);
-        request.headers.get_ref(&~"foo")[0u] == ~"bar";
-        assert!(request.body == str::to_bytes("hello world"));
-    }
+    assert!(request.uuid == ~"abCD-123");
+    assert!(request.id == ~"56");
+    assert!(request.headers.len() == 1u);
+    let value = match request.headers.find(&~"foo") {
+        Some(header_list) => copy header_list[0u],
+        None => ~"",
+    };
+    assert!(value == ~"bar");
+    assert!(request.body == str::to_bytes("hello world"));
 }
