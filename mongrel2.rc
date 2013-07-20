@@ -110,7 +110,7 @@ impl Connection {
                   code: uint,
                   status: &str,
                   headers: Headers,
-                  body: &[u8]) -> Result<(), ~str> {
+                  body: ~str) -> Result<(), ~str> {
         let mut rep = ~[];
 
         rep.push_all(str_as_bytes(fmt!("HTTP/1.1 %u ", code)));
@@ -126,7 +126,7 @@ impl Connection {
             };
         }
         rep.push_all("\r\n".as_bytes());
-        rep.push_all(body);
+        rep.push_all(str_as_bytes(body));
 
         self.reply(req, rep)
     }
@@ -183,6 +183,19 @@ impl Request {
           Some(version) => {
             version.len() == 1u && version[0u] == ~"HTTP/1.0"
           }
+        }
+    }
+}
+
+impl Clone for Request {
+    pub fn clone(&self) -> Request {
+        Request {
+            uuid: self.uuid.clone(),
+            id: self.id.clone(),
+            path: self.path.clone(),
+            headers: self.headers.clone(),
+            body: self.body.clone(),
+            json_body: self.json_body.clone(),
         }
     }
 }
