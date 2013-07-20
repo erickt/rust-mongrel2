@@ -151,6 +151,7 @@ pub fn Headers() -> Headers {
     HashMap::new()
 }
 
+#[deriving(Clone)]
 pub struct Request {
     uuid: ~str,
     id: ~str,
@@ -183,19 +184,6 @@ impl Request {
           Some(version) => {
             version.len() == 1u && version[0u] == ~"HTTP/1.0"
           }
-        }
-    }
-}
-
-impl Clone for Request {
-    pub fn clone(&self) -> Request {
-        Request {
-            uuid: self.uuid.clone(),
-            id: self.id.clone(),
-            path: self.path.clone(),
-            headers: self.headers.clone(),
-            body: self.body.clone(),
-            json_body: self.json_body.clone(),
         }
     }
 }
