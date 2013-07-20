@@ -8,12 +8,9 @@ extern mod zmq;
 extern mod tnetstring;
 
 use std::hashmap::HashMap;
-use std::{io, str, uint};
+use std::{cast, io, str, uint};
 use extra::json;
 use extra::json::ToStr;
-
-//use zmq::{Context, Socket};
-//use tnetstring::TNetString;
 
 pub struct Connection {
     sender_id: Option<~str>,
@@ -34,7 +31,7 @@ pub fn connect(
         Err(e) => fail!(e.to_str()),
     };
 
-    for req_addrs.each |req_addr| {
+    for req_addrs.iter().advance |req_addr| {
         match req.connect(*req_addr) {
           Ok(()) => { },
           Err(e) => fail!(e.to_str()),
@@ -49,14 +46,14 @@ pub fn connect(
     match sender_id {
         None => { },
         Some(ref sender_id) => {
-            match rep.set_identity(str::as_bytes_slice(*sender_id)) {
+            match rep.set_identity(sender_id.as_bytes()) {
                 Ok(()) => { },
                 Err(e) => fail!(e.to_str()),
             }
         }
     }
 
-    for rep_addrs.each |rep_addr| {
+    for rep_addrs.iter().advance |rep_addr| {
         match rep.connect(*rep_addr) {
             Ok(()) => { },
             Err(e) => fail!(e.to_str()),
@@ -73,25 +70,25 @@ pub fn connect(
 }
 
 impl Connection {
-    fn req_addrs(self) -> @~[~str] { self.req_addrs }
-    fn rep_addrs(self) -> @~[~str] { self.rep_addrs }
+    fn req_addrs(&self) -> @~[~str] { self.req_addrs }
+    fn rep_addrs(&self) -> @~[~str] { self.rep_addrs }
 
-    unsafe fn recv(self) -> Result<Request, ~str> {
-        match self.req.recv(0) {
+    pub fn recv(&self) -> Result<Request, ~str> {
+        match unsafe { self.req.recv(0) } {
             Err(e) => Err(e.to_str()),
             Ok(msg) => msg.with_bytes(|bytes| parse(bytes)),
         }
     }
 
-    fn send(self,
+    pub fn send(&self,
             uuid: &str,
             id: &[~str],
             body: &[u8]) -> Result<(), ~str> {
-        let id = str::to_bytes(str::connect(id, " "));
+        let id = str_as_bytes(id.connect(" "));
 
         let mut msg = ~[];
 
-        msg.push_all(str::as_bytes_slice(uuid));
+        msg.push_all(uuid.as_bytes());
         msg.push(' ' as u8);
         msg.push_all(tnetstring::to_bytes(&tnetstring::Str(id)));
         msg.push(' ' as u8);
@@ -103,39 +100,49 @@ impl Connection {
         }
     }
 
-    fn reply(self, req: &Request, body: &[u8]) -> Result<(), ~str> {
-        self.send(req.uuid, [copy req.id], body)
+    pub fn reply(&self, req: &Request, body: &[u8]) -> Result<(), ~str> {
+        //self.send(req.uuid, [copy req.id], body)
+        self.send(req.uuid, [req.id.clone()], body)
     }
 
-    fn reply_http(self,
+    pub fn reply_http(&self,
                   req: &Request,
                   code: uint,
                   status: &str,
                   headers: Headers,
                   body: &[u8]) -> Result<(), ~str> {
         let mut rep = ~[];
-        rep.push_all(str::to_bytes(fmt!("HTTP/1.1 %u ", code)));
-        rep.push_all(str::to_bytes(status));
-        rep.push_all(str::to_bytes("\r\n"));
-        rep.push_all(str::to_bytes("Content-Length: "));
-        rep.push_all(str::to_bytes(uint::to_str(body.len())));
-        rep.push_all(str::to_bytes("\r\n"));
 
-        for headers.each |key, values| {
-            for values.each |value| {
-                rep.push_all(str::to_bytes(key + ": " + *value + "\r\n"));
+        rep.push_all(str_as_bytes(fmt!("HTTP/1.1 %u ", code)));
+        rep.push_all(status.as_bytes());
+        rep.push_all("\r\n".as_bytes());
+        rep.push_all("Content-Length: ".as_bytes());
+        rep.push_all(str_as_bytes(uint::to_str(body.len())));
+        rep.push_all("\r\n".as_bytes());
+
+        for headers.iter().advance |(key, values)| {
+            for values.iter().advance |value| {
+                rep.push_all(str_as_bytes(*key + ": " + *value + "\r\n"));
             };
         }
-        rep.push_all(str::to_bytes("\r\n"));
+        rep.push_all("\r\n".as_bytes());
         rep.push_all(body);
 
         self.reply(req, rep)
     }
 
-    fn term (&mut self) {
+    pub fn term (&mut self) {
         self.req.close();
         self.rep.close();
     }
+}
+
+// TODO: there is no `as_bytes' for ~str that will return ~[u8].
+fn str_as_bytes(s: ~str) -> ~[u8] {
+    let s = s.clone();
+    let mut buf: ~[u8] = unsafe { cast::transmute(s) };
+    buf.pop();
+    buf
 }
 
 pub type Headers = HashMap<~str, ~[~str]>;
@@ -154,7 +161,7 @@ pub struct Request {
 }
 
 impl Request {
-    fn is_disconnect(self) -> bool {
+    pub fn is_disconnect(&self) -> bool {
         do self.json_body.map_default(false) |map| {
             match map.find(&~"type") {
               Some(&json::String(ref typ)) => *typ == ~"disconnect",
@@ -163,7 +170,7 @@ impl Request {
         }
     }
 
-    fn should_close(self) -> bool {
+    pub fn should_close(&self) -> bool {
         match self.headers.find(&~"connection") {
           None => { },
           Some(conn) => {
@@ -243,7 +250,7 @@ fn read_str(rdr: @io::Reader) -> Option<~str> {
         if ch == ' ' {
             return Some(s);
         } else {
-            str::push_char(&mut s, ch);
+            s.push_char(ch);
         }
     }
 
@@ -296,7 +303,7 @@ fn parse_headers(rdr: @io::Reader) -> Result<Headers, ~str> {
 fn parse_tnetstring_headers(map: tnetstring::Map) -> Result<Headers, ~str> {
     let mut headers = HashMap::new();
 
-    for map.each |key, value| {
+    for map.iter().advance |(key, value)| {
         let key = str::from_bytes(*key);
         let mut values = match headers.pop(&key) {
             Some(values) => values,
@@ -306,7 +313,7 @@ fn parse_tnetstring_headers(map: tnetstring::Map) -> Result<Headers, ~str> {
         match value {
             &tnetstring::Str(ref v) => values.push(str::from_bytes(*v)),
             &tnetstring::Vec(ref vs) => {
-                for vs.each |v| {
+                for vs.iter().advance |v| {
                     match v {
                         &tnetstring::Str(ref v) =>
                             values.push(str::from_bytes(*v)),
@@ -326,18 +333,18 @@ fn parse_tnetstring_headers(map: tnetstring::Map) -> Result<Headers, ~str> {
 fn parse_json_headers(map: ~json::Object) -> Result<Headers, ~str> {
     let mut headers = HashMap::new();
 
-    for map.each |key, value| {
+    for map.iter().advance |(key, value)| {
         let mut values = match headers.pop(key) {
             Some(values) => values,
             None => ~[],
         };
 
         match value {
-            &json::String(ref v) => values.push(copy *v),
+            &json::String(ref v) => values.push(v.clone()),
             &json::List(ref vs) => {
-                for vs.each |v| {
+                for vs.iter().advance |v| {
                     match v {
-                        &json::String(ref v) => values.push(copy *v),
+                        &json::String(ref v) => values.push(v.clone()),
                         _ => return Err(~"header value is not a string"),
                     }
                 }
@@ -345,7 +352,7 @@ fn parse_json_headers(map: ~json::Object) -> Result<Headers, ~str> {
             _ => return Err(~"header value is not string"),
         }
 
-        headers.insert(copy *key, values);
+        headers.insert(key.clone(), values);
     }
 
     Ok(headers)
@@ -365,7 +372,7 @@ fn parse_body(rdr: @io::Reader) -> Result<~[u8], ~str> {
 
 #[test]
 fn test() {
-    let ctx = result::unwrap(zmq::init(1));
+    let ctx = zmq::init(1).unwrap();
 
     let mut connection = connect(ctx,
         Some(~"F0D32575-2ABB-4957-BC8B-12DAC8AFF13A"),
@@ -378,15 +385,15 @@ fn test() {
 
 #[test]
 fn test_request_parse() {
-    let request = result::unwrap(parse(
+    let request = parse(
         str::to_bytes("abCD-123 56 / 13:{\"foo\":\"bar\"},11:hello world,")
-    ));
+    ).unwrap();
 
     assert!(request.uuid == ~"abCD-123");
     assert!(request.id == ~"56");
     assert!(request.headers.len() == 1u);
     let value = match request.headers.find(&~"foo") {
-        Some(header_list) => copy header_list[0u],
+        Some(header_list) => header_list[0u].clone(),
         None => ~"",
     };
     assert!(value == ~"bar");
