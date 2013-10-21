@@ -31,7 +31,7 @@ pub fn connect(
         Err(e) => fail!(e.to_str()),
     };
 
-    for req_addrs.iter().advance |req_addr| {
+    for req_addr in req_addrs.iter() {
         match req.connect(*req_addr) {
           Ok(()) => { },
           Err(e) => fail!(e.to_str()),
@@ -53,7 +53,7 @@ pub fn connect(
         }
     }
 
-    for rep_addrs.iter().advance |rep_addr| {
+    for rep_addr in rep_addrs.iter() {
         match rep.connect(*rep_addr) {
             Ok(()) => { },
             Err(e) => fail!(e.to_str()),
@@ -120,8 +120,8 @@ impl Connection {
         rep.push_all(str_as_bytes(uint::to_str(body.len())));
         rep.push_all("\r\n".as_bytes());
 
-        for headers.iter().advance |(key, values)| {
-            for values.iter().advance |value| {
+        for (key, values) in headers.iter() {
+            for value in values.iter() {
                 rep.push_all(str_as_bytes(*key + ": " + *value + "\r\n"));
             };
         }
@@ -304,7 +304,7 @@ fn parse_headers(rdr: @io::Reader) -> Result<Headers, ~str> {
 fn parse_tnetstring_headers(map: tnetstring::Map) -> Result<Headers, ~str> {
     let mut headers = HashMap::new();
 
-    for map.iter().advance |(key, value)| {
+    for (key, value) in map.iter() {
         let key = str::from_bytes(*key);
         let mut values = match headers.pop(&key) {
             Some(values) => values,
@@ -314,7 +314,7 @@ fn parse_tnetstring_headers(map: tnetstring::Map) -> Result<Headers, ~str> {
         match value {
             &tnetstring::Str(ref v) => values.push(str::from_bytes(*v)),
             &tnetstring::Vec(ref vs) => {
-                for vs.iter().advance |v| {
+                for v in vs.iter() {
                     match v {
                         &tnetstring::Str(ref v) =>
                             values.push(str::from_bytes(*v)),
@@ -334,7 +334,7 @@ fn parse_tnetstring_headers(map: tnetstring::Map) -> Result<Headers, ~str> {
 fn parse_json_headers(map: ~json::Object) -> Result<Headers, ~str> {
     let mut headers = HashMap::new();
 
-    for map.iter().advance |(key, value)| {
+    for (key, value) in map.iter() {
         let mut values = match headers.pop(key) {
             Some(values) => values,
             None => ~[],
@@ -343,7 +343,7 @@ fn parse_json_headers(map: ~json::Object) -> Result<Headers, ~str> {
         match value {
             &json::String(ref v) => values.push(v.clone()),
             &json::List(ref vs) => {
-                for vs.iter().advance |v| {
+                for v in vs.iter() {
                     match v {
                         &json::String(ref v) => values.push(v.clone()),
                         _ => return Err(~"header value is not a string"),
