@@ -1,8 +1,8 @@
 all:
-	rustc mongrel2.rc
+	rustc mongrel2.rs
 
 test:
-	rustc --test mongrel2.rc
+	rustc --test mongrel2.rs
 
 example: all
 	rustc -L . example.rs
