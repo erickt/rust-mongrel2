@@ -8,9 +8,8 @@ extern mod zmq = "github.com/erickt/rust-zmq";
 extern mod tnetstring = "github.com/erickt/rust-tnetstring";
 
 use std::hashmap::HashMap;
-use std::{cast, io, str, uint};
+use std::{cast, io, str};
 use extra::json;
-use extra::json::ToStr;
 
 pub struct Connection {
     sender_id: Option<~str>,
@@ -74,7 +73,7 @@ impl Connection {
     fn rep_addrs(&self) -> @~[~str] { self.rep_addrs }
 
     pub fn recv(&self) -> Result<Request, ~str> {
-        match unsafe { self.req.recv(0) } {
+        match self.req.recv_msg(0) {
             Err(e) => Err(e.to_str()),
             Ok(msg) => msg.with_bytes(|bytes| parse(bytes)),
         }
@@ -117,7 +116,7 @@ impl Connection {
         rep.push_all(status.as_bytes());
         rep.push_all("\r\n".as_bytes());
         rep.push_all("Content-Length: ".as_bytes());
-        rep.push_all(str_as_bytes(uint::to_str(body.len())));
+        rep.push_all(str_as_bytes(body.len().to_str()));
         rep.push_all("\r\n".as_bytes());
 
         for (key, values) in headers.iter() {
@@ -163,10 +162,13 @@ pub struct Request {
 
 impl Request {
     pub fn is_disconnect(&self) -> bool {
-        do self.json_body.map_default(false) |map| {
-            match map.find(&~"type") {
-              Some(&json::String(ref typ)) => *typ == ~"disconnect",
-              _ => false,
+        match self.json_body {
+            None => false,
+            Some(ref map) => {
+                match map.find(&~"type") {
+                    Some(&json::String(ref typ)) => *typ == ~"disconnect",
+                    _ => false,
+                }
             }
         }
     }
@@ -223,7 +225,7 @@ fn parse_reader(rdr: @io::Reader) -> Result<Request, ~str> {
       None => None,
       Some(method) => {
         if method.len() == 1u && method[0u] == ~"JSON" {
-            match json::from_str(str::from_bytes(body)) {
+            match json::from_str(str::from_utf8(body)) {
               Ok(json::Object(map)) => Some(map),
               Ok(_) => return Err(~"json body is not a dictionary"),
               Err(e) =>
@@ -290,7 +292,7 @@ fn parse_headers(rdr: @io::Reader) -> Result<Headers, ~str> {
 
         // Fall back onto json if we got a string.
         tnetstring::Str(bytes) => {
-            match json::from_str(str::from_bytes(bytes)) {
+            match json::from_str(str::from_utf8(bytes)) {
                 Err(e) => return Err(e.to_str()),
                 Ok(json::Object(map)) => parse_json_headers(map),
                 Ok(_) => Err(~"header is not a dictionary"),
@@ -305,19 +307,19 @@ fn parse_tnetstring_headers(map: tnetstring::Map) -> Result<Headers, ~str> {
     let mut headers = HashMap::new();
 
     for (key, value) in map.iter() {
-        let key = str::from_bytes(*key);
+        let key = str::from_utf8(*key);
         let mut values = match headers.pop(&key) {
             Some(values) => values,
             None => ~[],
         };
 
         match value {
-            &tnetstring::Str(ref v) => values.push(str::from_bytes(*v)),
+            &tnetstring::Str(ref v) => values.push(str::from_utf8(*v)),
             &tnetstring::Vec(ref vs) => {
                 for v in vs.iter() {
                     match v {
                         &tnetstring::Str(ref v) =>
-                            values.push(str::from_bytes(*v)),
+                            values.push(str::from_utf8(*v)),
                         _ => return Err(~"header value is not a string"),
                     }
                 }
@@ -373,7 +375,7 @@ fn parse_body(rdr: @io::Reader) -> Result<~[u8], ~str> {
 
 #[test]
 fn test() {
-    let ctx = zmq::init(1).unwrap();
+    let ctx = zmq::Context::new();
 
     let mut connection = connect(ctx,
         Some(~"F0D32575-2ABB-4957-BC8B-12DAC8AFF13A"),
@@ -381,13 +383,12 @@ fn test() {
         ~[~"tcp://127.0.0.1:9999"]);
 
     connection.term();
-    ctx.term();
 }
 
 #[test]
 fn test_request_parse() {
     let request = parse(
-        str::to_bytes("abCD-123 56 / 13:{\"foo\":\"bar\"},11:hello world,")
+        bytes!("abCD-123 56 / 13:{\"foo\":\"bar\"},11:hello world,")
     ).unwrap();
 
     assert!(request.uuid == ~"abCD-123");
@@ -398,5 +399,5 @@ fn test_request_parse() {
         None => ~"",
     };
     assert!(value == ~"bar");
-    assert!(request.body == str::to_bytes("hello world"));
+    assert!(request.body == (~"hello world").into_bytes());
 }
