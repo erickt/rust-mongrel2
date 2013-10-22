@@ -4,8 +4,8 @@
 #[crate_type = "lib"];
 
 extern mod extra;
-extern mod zmq;
-extern mod tnetstring;
+extern mod zmq = "github.com/erickt/rust-zmq";
+extern mod tnetstring = "github.com/erickt/rust-tnetstring";
 
 use std::hashmap::HashMap;
 use std::{cast, io, str, uint};
@@ -113,7 +113,7 @@ impl Connection {
                   body: ~str) -> Result<(), ~str> {
         let mut rep = ~[];
 
-        rep.push_all(str_as_bytes(fmt!("HTTP/1.1 %u ", code)));
+        rep.push_all(str_as_bytes(format!("HTTP/1.1 {} ", code)));
         rep.push_all(status.as_bytes());
         rep.push_all("\r\n".as_bytes());
         rep.push_all("Content-Length: ".as_bytes());
@@ -227,7 +227,7 @@ fn parse_reader(rdr: @io::Reader) -> Result<Request, ~str> {
               Ok(json::Object(map)) => Some(map),
               Ok(_) => return Err(~"json body is not a dictionary"),
               Err(e) =>
-                return Err(fmt!("invalid JSON string: %s", e.to_str())),
+                return Err(format!("invalid JSON string: {}", e.to_str())),
             }
         } else { None }
       }
