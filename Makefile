@@ -1,15 +1,11 @@
+RUSTPKG ?= rustpkg
+RUST_FLAGS ?= -Z debug-info -O
+
 all:
-	rustc mongrel2.rs
+	$(RUSTPKG) $(RUST_FLAGS) install mongrel2
 
 test:
-	rustc --test mongrel2.rs
-
-example: all
-	rustc -L . example.rs
-
-deps:
-	cargo install zmq
-	cargo install tnetstring
+	$(RUSTPKG) test mongrel2
 
 clean:
-	rm -rf mongrel2 example *.so *.dylib *.dSYM
+	rm -rf bin build lib

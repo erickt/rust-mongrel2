@@ -4,28 +4,30 @@
 #[crate_type = "lib"];
 
 extern mod extra;
-extern mod zmq = "github.com/erickt/rust-zmq";
-extern mod tnetstring = "github.com/erickt/rust-tnetstring";
+extern mod zmq; // = "github.com/erickt/rust-zmq";
+extern mod tnetstring; // = "github.com/erickt/rust-tnetstring";
 
 use std::hashmap::HashMap;
-use std::{cast, io, str};
+use std::io::Decorator;
+use std::io::mem::{BufReader, MemWriter};
+use std::str;
 use extra::json;
 
 pub struct Connection {
     sender_id: Option<~str>,
-    req_addrs: @~[~str],
-    rep_addrs: @~[~str],
+    req_addrs: ~[~str],
+    rep_addrs: ~[~str],
     req: zmq::Socket,
     rep: zmq::Socket,
 }
 
 pub fn connect(
-    ctx: zmq::Context,
+    ctx: &mut zmq::Context,
     sender_id: Option<~str>,
     req_addrs: ~[~str],
     rep_addrs: ~[~str]
 ) -> Connection {
-    let req = match ctx.socket(zmq::PULL) {
+    let mut req = match ctx.socket(zmq::PULL) {
         Ok(req) => req,
         Err(e) => fail!(e.to_str()),
     };
@@ -37,7 +39,7 @@ pub fn connect(
         }
     }
 
-    let rep = match ctx.socket(zmq::PUB) {
+    let mut rep = match ctx.socket(zmq::PUB) {
         Ok(rep) => rep,
         Err(e) => fail!(e.to_str()),
     };
@@ -53,102 +55,100 @@ pub fn connect(
     }
 
     for rep_addr in rep_addrs.iter() {
+        println!("rep: {}", *rep_addr);
         match rep.connect(*rep_addr) {
             Ok(()) => { },
             Err(e) => fail!(e.to_str()),
         }
     }
 
+    rep.send_str("hey", 0);
+
     Connection {
         sender_id: sender_id,
-        req_addrs: @req_addrs,
-        rep_addrs: @rep_addrs,
+        req_addrs: req_addrs,
+        rep_addrs: rep_addrs,
         req: req,
         rep: rep
     }
 }
 
 impl Connection {
-    fn req_addrs(&self) -> @~[~str] { self.req_addrs }
-    fn rep_addrs(&self) -> @~[~str] { self.rep_addrs }
+    pub fn req_addrs<'a>(&'a self) -> &'a [~str] {
+        self.req_addrs.as_slice()
+    }
 
-    pub fn recv(&self) -> Result<Request, ~str> {
+    pub fn rep_addrs<'a>(&'a self) -> &'a [~str] {
+        self.rep_addrs.as_slice()
+    }
+
+    pub fn recv(&mut self) -> Result<Request, ~str> {
         match self.req.recv_msg(0) {
             Err(e) => Err(e.to_str()),
             Ok(msg) => msg.with_bytes(|bytes| parse(bytes)),
         }
     }
 
-    pub fn send(&self,
+    pub fn send(&mut self,
             uuid: &str,
             id: &[~str],
             body: &[u8]) -> Result<(), ~str> {
-        let id = str_as_bytes(id.connect(" "));
+        let mut wr = MemWriter::new();
+        {
+            let wr = &mut wr as &mut Writer;
 
-        let mut msg = ~[];
+            write!(wr, "{} ", uuid);
+            let id = id.connect(" ").into_bytes();
+            tnetstring::to_writer(wr, &tnetstring::Str(id));
+            write!(wr, " ");
+            wr.write(body);
+        }
 
-        msg.push_all(uuid.as_bytes());
-        msg.push(' ' as u8);
-        msg.push_all(tnetstring::to_bytes(&tnetstring::Str(id)));
-        msg.push(' ' as u8);
-        msg.push_all(body);
+        println!("fee: ---\n{}---\n", str::from_utf8(wr.inner_ref().as_slice()));
 
-        match self.rep.send(msg, 0) {
+        match self.rep.send(wr.inner(), 0) {
           Err(e) => Err(e.to_str()),
           Ok(()) => Ok(()),
         }
     }
 
-    pub fn reply(&self, req: &Request, body: &[u8]) -> Result<(), ~str> {
-        //self.send(req.uuid, [copy req.id], body)
+    pub fn reply(&mut self, req: &Request, body: &[u8]) -> Result<(), ~str> {
         self.send(req.uuid, [req.id.clone()], body)
     }
 
-    pub fn reply_http(&self,
+    pub fn reply_http(&mut self,
                   req: &Request,
                   code: uint,
                   status: &str,
-                  headers: Headers,
-                  body: ~str) -> Result<(), ~str> {
-        let mut rep = ~[];
+                  headers: &Headers,
+                  body: &str) -> Result<(), ~str> {
+        let body_bytes = body.as_bytes();
+        let mut wr = MemWriter::new();
 
-        rep.push_all(str_as_bytes(format!("HTTP/1.1 {} ", code)));
-        rep.push_all(status.as_bytes());
-        rep.push_all("\r\n".as_bytes());
-        rep.push_all("Content-Length: ".as_bytes());
-        rep.push_all(str_as_bytes(body.len().to_str()));
-        rep.push_all("\r\n".as_bytes());
-
-        for (key, values) in headers.iter() {
-            for value in values.iter() {
-                rep.push_all(str_as_bytes(*key + ": " + *value + "\r\n"));
-            };
+        {
+            let wr = &mut wr as &mut Writer;
+            write!(wr, "HTTP/1.1 {} {}\r\n", code, status);
+            for (key, values) in headers.iter() {
+                for value in values.iter() {
+                    write!(wr, "{}: {}\r\n", *key, *value);
+                };
+            }
+            write!(wr, "Content-Length: {}\r\n\r\n", body_bytes.len());
+            wr.write(body_bytes);
         }
-        rep.push_all("\r\n".as_bytes());
-        rep.push_all(str_as_bytes(body));
 
-        self.reply(req, rep)
+        self.reply(req, wr.inner())
     }
+}
 
-    pub fn term (&mut self) {
+impl Drop for Connection {
+    fn drop(&mut self) {
         self.req.close();
         self.rep.close();
     }
 }
 
-// TODO: there is no `as_bytes' for ~str that will return ~[u8].
-fn str_as_bytes(s: ~str) -> ~[u8] {
-    let s = s.clone();
-    let mut buf: ~[u8] = unsafe { cast::transmute(s) };
-    buf.pop();
-    buf
-}
-
-pub type Headers = HashMap<~str, ~[~str]>;
-
-pub fn Headers() -> Headers {
-    HashMap::new()
-}
+type Headers = HashMap<~str, ~[~str]>;
 
 #[deriving(Clone)]
 pub struct Request {
@@ -191,10 +191,11 @@ impl Request {
 }
 
 fn parse(bytes: &[u8]) -> Result<Request, ~str> {
-    io::with_bytes_reader(bytes, parse_reader)
+    let mut rdr = BufReader::new(bytes);
+    parse_reader(&mut rdr)
 }
 
-fn parse_reader(rdr: @io::Reader) -> Result<Request, ~str> {
+fn parse_reader<R: Reader + Buffer>(rdr: &mut R) -> Result<Request, ~str> {
     let uuid = match parse_uuid(rdr) {
         Ok(uuid) => uuid,
         Err(e) => return Err(e),
@@ -245,43 +246,46 @@ fn parse_reader(rdr: @io::Reader) -> Result<Request, ~str> {
     })
 }
 
-fn read_str(rdr: @io::Reader) -> Option<~str> {
+fn read_str<R: Reader + Buffer>(rdr: &mut R) -> Option<~str> {
     let mut s = ~"";
 
-    while !rdr.eof() {
-        let ch = rdr.read_char();
-        if ch == ' ' {
-            return Some(s);
-        } else {
-            s.push_char(ch);
+    loop {
+        match rdr.read_char() {
+            Some(' ') => {
+                return Some(s);
+            }
+            Some(ch) => {
+                s.push_char(ch);
+            }
+            None => {
+                return None;
+            }
         }
     }
-
-    None
 }
 
-fn parse_uuid(rdr: @io::Reader) -> Result<~str, ~str> {
+fn parse_uuid<R: Reader + Buffer>(rdr: &mut R) -> Result<~str, ~str> {
     match read_str(rdr) {
         Some(s) => Ok(s),
         None => Err(~"invalid sender uuid"),
     }
 }
 
-fn parse_id(rdr: @io::Reader) -> Result<~str, ~str> {
+fn parse_id<R: Reader + Buffer>(rdr: &mut R) -> Result<~str, ~str> {
     match read_str(rdr) {
         Some(s) => Ok(s),
         None => Err(~"invalid connection id"),
     }
 }
 
-fn parse_path(rdr: @io::Reader) -> Result<~str, ~str> {
+fn parse_path<R: Reader + Buffer>(rdr: &mut R) -> Result<~str, ~str> {
     match read_str(rdr) {
         Some(s) => Ok(s),
         None => Err(~"invalid path"),
     }
 }
 
-fn parse_headers(rdr: @io::Reader) -> Result<Headers, ~str> {
+fn parse_headers<R: Reader + Buffer>(rdr: &mut R) -> Result<Headers, ~str> {
     let tns = match tnetstring::from_reader(rdr) {
         None => return Err(~"empty headers"),
         Some(tns) => tns,
@@ -306,20 +310,20 @@ fn parse_headers(rdr: @io::Reader) -> Result<Headers, ~str> {
 fn parse_tnetstring_headers(map: tnetstring::Map) -> Result<Headers, ~str> {
     let mut headers = HashMap::new();
 
-    for (key, value) in map.iter() {
-        let key = str::from_utf8(*key);
+    for (key, value) in map.move_iter() {
+        let key = str::from_utf8_owned(key);
         let mut values = match headers.pop(&key) {
             Some(values) => values,
             None => ~[],
         };
 
         match value {
-            &tnetstring::Str(ref v) => values.push(str::from_utf8(*v)),
-            &tnetstring::Vec(ref vs) => {
-                for v in vs.iter() {
+            tnetstring::Str(v) => values.push(str::from_utf8_owned(v)),
+            tnetstring::Vec(vs) => {
+                for v in vs.move_iter() {
                     match v {
-                        &tnetstring::Str(ref v) =>
-                            values.push(str::from_utf8(*v)),
+                        tnetstring::Str(v) =>
+                            values.push(str::from_utf8_owned(v)),
                         _ => return Err(~"header value is not a string"),
                     }
                 }
@@ -361,7 +365,7 @@ fn parse_json_headers(map: ~json::Object) -> Result<Headers, ~str> {
     Ok(headers)
 }
 
-fn parse_body(rdr: @io::Reader) -> Result<~[u8], ~str> {
+fn parse_body<R: Reader + Buffer>(rdr: &mut R) -> Result<~[u8], ~str> {
     match tnetstring::from_reader(rdr) {
         None => Err(~"empty body"),
         Some(tns) => {
@@ -371,33 +375,4 @@ fn parse_body(rdr: @io::Reader) -> Result<~[u8], ~str> {
             }
         }
     }
-}
-
-#[test]
-fn test() {
-    let ctx = zmq::Context::new();
-
-    let mut connection = connect(ctx,
-        Some(~"F0D32575-2ABB-4957-BC8B-12DAC8AFF13A"),
-        ~[~"tcp://127.0.0.1:9998"],
-        ~[~"tcp://127.0.0.1:9999"]);
-
-    connection.term();
-}
-
-#[test]
-fn test_request_parse() {
-    let request = parse(
-        bytes!("abCD-123 56 / 13:{\"foo\":\"bar\"},11:hello world,")
-    ).unwrap();
-
-    assert!(request.uuid == ~"abCD-123");
-    assert!(request.id == ~"56");
-    assert!(request.headers.len() == 1u);
-    let value = match request.headers.find(&~"foo") {
-        Some(header_list) => header_list[0u].clone(),
-        None => ~"",
-    };
-    assert!(value == ~"bar");
-    assert!(request.body == (~"hello world").into_bytes());
 }
