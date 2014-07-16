@@ -3,6 +3,4 @@ config.sqlite
 *.dSYM
 logs/
 run/
-example
-mongrel2
-.cargo
+/target/

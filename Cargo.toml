@@ -1,0 +1,17 @@
+[package]
+name = "rust-mongrel2"
+version = "0.3.0"
+authors = ["erick.tryzelaar@gmail.com"]
+
+[[lib]]
+name = "mongrel2"
+path = "src/mongrel2/lib.rs"
+
+[[example]]
+name = "example"
+
+[dependencies.tnetstring]
+git = "https://github.com/erickt/rust-tnetstring"
+
+[dependencies.zmq]
+git = "https://github.com/erickt/rust-zmq"

@@ -1,47 +1,44 @@
-#[link(name = "mongrel2",
-       vers = "0.3",
-       uuid = "f1bdda2b-0db7-42df-a40e-0decd4d56bb0")];
-#[crate_type = "lib"];
+#![crate_name = "mongrel2"]
+#![crate_type = "lib"]
 
-extern mod extra;
-extern mod zmq; // = "github.com/erickt/rust-zmq";
-extern mod tnetstring; // = "github.com/erickt/rust-tnetstring";
+extern crate serialize;
+extern crate tnetstring;
+extern crate zmq;
 
-use std::hashmap::HashMap;
-use std::io::Decorator;
-use std::io::mem::{BufReader, MemWriter};
+use std::collections::HashMap;
+use std::io::{BufReader, MemWriter};
 use std::str;
-use extra::json;
+use serialize::json;
 
 pub struct Connection {
-    sender_id: Option<~str>,
-    req_addrs: ~[~str],
-    rep_addrs: ~[~str],
+    sender_id: Option<String>,
+    req_addrs: Vec<String>,
+    rep_addrs: Vec<String>,
     req: zmq::Socket,
     rep: zmq::Socket,
 }
 
 pub fn connect(
     ctx: &mut zmq::Context,
-    sender_id: Option<~str>,
-    req_addrs: ~[~str],
-    rep_addrs: ~[~str]
+    sender_id: Option<String>,
+    req_addrs: Vec<String>,
+    rep_addrs: Vec<String>
 ) -> Connection {
     let mut req = match ctx.socket(zmq::PULL) {
         Ok(req) => req,
-        Err(e) => fail!(e.to_str()),
+        Err(e) => fail!(e.to_string()),
     };
 
     for req_addr in req_addrs.iter() {
-        match req.connect(*req_addr) {
+        match req.connect(req_addr.as_slice()) {
           Ok(()) => { },
-          Err(e) => fail!(e.to_str()),
+          Err(e) => fail!(e.to_string()),
         }
     }
 
     let mut rep = match ctx.socket(zmq::PUB) {
         Ok(rep) => rep,
-        Err(e) => fail!(e.to_str()),
+        Err(e) => fail!(e.to_string()),
     };
 
     match sender_id {
@@ -49,16 +46,16 @@ pub fn connect(
         Some(ref sender_id) => {
             match rep.set_identity(sender_id.as_bytes()) {
                 Ok(()) => { },
-                Err(e) => fail!(e.to_str()),
+                Err(e) => fail!(e.to_string()),
             }
         }
     }
 
     for rep_addr in rep_addrs.iter() {
         println!("rep: {}", *rep_addr);
-        match rep.connect(*rep_addr) {
+        match rep.connect(rep_addr.as_slice()) {
             Ok(()) => { },
-            Err(e) => fail!(e.to_str()),
+            Err(e) => fail!(e.to_string()),
         }
     }
 
@@ -74,25 +71,25 @@ pub fn connect(
 }
 
 impl Connection {
-    pub fn req_addrs<'a>(&'a self) -> &'a [~str] {
+    pub fn req_addrs<'a>(&'a self) -> &'a [String] {
         self.req_addrs.as_slice()
     }
 
-    pub fn rep_addrs<'a>(&'a self) -> &'a [~str] {
+    pub fn rep_addrs<'a>(&'a self) -> &'a [String] {
         self.rep_addrs.as_slice()
     }
 
-    pub fn recv(&mut self) -> Result<Request, ~str> {
+    pub fn recv(&mut self) -> Result<Request, String> {
         match self.req.recv_msg(0) {
-            Err(e) => Err(e.to_str()),
+            Err(e) => Err(e.to_string()),
             Ok(msg) => msg.with_bytes(|bytes| parse(bytes)),
         }
     }
 
     pub fn send(&mut self,
             uuid: &str,
-            id: &[~str],
-            body: &[u8]) -> Result<(), ~str> {
+            id: &[String],
+            body: &[u8]) -> Result<(), String> {
         let mut wr = MemWriter::new();
         {
             let wr = &mut wr as &mut Writer;
@@ -104,16 +101,16 @@ impl Connection {
             wr.write(body);
         }
 
-        println!("fee: ---\n{}---\n", str::from_utf8(wr.inner_ref().as_slice()));
+        println!("fee: ---\n{}---\n", str::from_utf8(wr.get_ref().as_slice()));
 
-        match self.rep.send(wr.inner(), 0) {
-          Err(e) => Err(e.to_str()),
+        match self.rep.send(wr.unwrap().as_slice(), 0) {
+          Err(e) => Err(e.to_string()),
           Ok(()) => Ok(()),
         }
     }
 
-    pub fn reply(&mut self, req: &Request, body: &[u8]) -> Result<(), ~str> {
-        self.send(req.uuid, [req.id.clone()], body)
+    pub fn reply(&mut self, req: &Request, body: &[u8]) -> Result<(), String> {
+        self.send(req.uuid.as_slice(), [req.id.clone()], body)
     }
 
     pub fn reply_http(&mut self,
@@ -121,7 +118,7 @@ impl Connection {
                   code: uint,
                   status: &str,
                   headers: &Headers,
-                  body: &str) -> Result<(), ~str> {
+                  body: &str) -> Result<(), String> {
         let body_bytes = body.as_bytes();
         let mut wr = MemWriter::new();
 
@@ -137,27 +134,27 @@ impl Connection {
             wr.write(body_bytes);
         }
 
-        self.reply(req, wr.inner())
+        self.reply(req, wr.unwrap().as_slice())
     }
 }
 
 impl Drop for Connection {
     fn drop(&mut self) {
-        self.req.close();
-        self.rep.close();
+        self.req.close().unwrap();
+        self.rep.close().unwrap();
     }
 }
 
-type Headers = HashMap<~str, ~[~str]>;
+type Headers = HashMap<String, Vec<String>>;
 
 #[deriving(Clone)]
 pub struct Request {
-    uuid: ~str,
-    id: ~str,
-    path: ~str,
+    uuid: String,
+    id: String,
+    path: String,
     headers: Headers,
-    body: ~[u8],
-    json_body: Option<~json::Object>,
+    body: Vec<u8>,
+    json_body: Option<json::Object>,
 }
 
 impl Request {
@@ -165,8 +162,8 @@ impl Request {
         match self.json_body {
             None => false,
             Some(ref map) => {
-                match map.find(&~"type") {
-                    Some(&json::String(ref typ)) => *typ == ~"disconnect",
+                match map.find(&"type".to_string()) {
+                    Some(&json::String(ref typ)) => *typ == "disconnect".to_string(),
                     _ => false,
                 }
             }
@@ -174,28 +171,30 @@ impl Request {
     }
 
     pub fn should_close(&self) -> bool {
-        match self.headers.find(&~"connection") {
-          None => { },
-          Some(conn) => {
-            if conn.len() == 1u && conn[0u] == ~"close" { return true; }
-          }
+        match self.headers.find(&"connection".to_string()) {
+            None => { },
+            Some(conn) => {
+                if conn.len() == 1 && conn.get(0).as_slice() == "close" {
+                    return true;
+                }
+            }
         }
 
-        match self.headers.find(&~"VERSION") {
-          None => false,
-          Some(version) => {
-            version.len() == 1u && version[0u] == ~"HTTP/1.0"
-          }
+        match self.headers.find(&"VERSION".to_string()) {
+            None => false,
+            Some(version) => {
+                version.len() == 1u && version.get(0).as_slice() == "HTTP/1.0"
+            }
         }
     }
 }
 
-fn parse(bytes: &[u8]) -> Result<Request, ~str> {
+fn parse(bytes: &[u8]) -> Result<Request, String> {
     let mut rdr = BufReader::new(bytes);
     parse_reader(&mut rdr)
 }
 
-fn parse_reader<R: Reader + Buffer>(rdr: &mut R) -> Result<Request, ~str> {
+fn parse_reader<R: Reader + Buffer>(rdr: &mut R) -> Result<Request, String> {
     let uuid = match parse_uuid(rdr) {
         Ok(uuid) => uuid,
         Err(e) => return Err(e),
@@ -222,18 +221,21 @@ fn parse_reader<R: Reader + Buffer>(rdr: &mut R) -> Result<Request, ~str> {
     };
 
     // Extract out the json body if we have it.
-    let json_body = match headers.find(&~"METHOD") {
-      None => None,
-      Some(method) => {
-        if method.len() == 1u && method[0u] == ~"JSON" {
-            match json::from_str(str::from_utf8(body)) {
-              Ok(json::Object(map)) => Some(map),
-              Ok(_) => return Err(~"json body is not a dictionary"),
-              Err(e) =>
-                return Err(format!("invalid JSON string: {}", e.to_str())),
-            }
-        } else { None }
-      }
+    let json_body = match headers.find(&"METHOD".to_string()) {
+        None => None,
+        Some(method) => {
+            if method.len() == 1 && method.get(0).as_slice() == "JSON" {
+                match json::from_str(str::from_utf8(body.as_slice()).unwrap()) {
+                    Ok(json::Object(map)) => Some(map),
+                    Ok(_) => {
+                        return Err("json body is not a dictionary".to_string());
+                    }
+                    Err(e) => {
+                        return Err(format!("invalid JSON string: {}", e.to_string()))
+                    }
+                }
+            } else { None }
+        }
     };
 
     Ok(Request {
@@ -246,49 +248,54 @@ fn parse_reader<R: Reader + Buffer>(rdr: &mut R) -> Result<Request, ~str> {
     })
 }
 
-fn read_str<R: Reader + Buffer>(rdr: &mut R) -> Option<~str> {
-    let mut s = ~"";
+fn read_str<R: Reader + Buffer>(rdr: &mut R) -> Option<String> {
+    let mut s = "".to_string();
 
     loop {
         match rdr.read_char() {
-            Some(' ') => {
+            Ok(' ') => {
                 return Some(s);
             }
-            Some(ch) => {
+            Ok(ch) => {
                 s.push_char(ch);
             }
-            None => {
+            Err(_) => {
                 return None;
             }
         }
     }
 }
 
-fn parse_uuid<R: Reader + Buffer>(rdr: &mut R) -> Result<~str, ~str> {
+fn parse_uuid<R: Reader + Buffer>(rdr: &mut R) -> Result<String, String> {
     match read_str(rdr) {
         Some(s) => Ok(s),
-        None => Err(~"invalid sender uuid"),
+        None => Err("invalid sender uuid".to_string()),
     }
 }
 
-fn parse_id<R: Reader + Buffer>(rdr: &mut R) -> Result<~str, ~str> {
+fn parse_id<R: Reader + Buffer>(rdr: &mut R) -> Result<String, String> {
     match read_str(rdr) {
         Some(s) => Ok(s),
-        None => Err(~"invalid connection id"),
+        None => Err("invalid connection id".to_string()),
     }
 }
 
-fn parse_path<R: Reader + Buffer>(rdr: &mut R) -> Result<~str, ~str> {
+fn parse_path<R: Reader + Buffer>(rdr: &mut R) -> Result<String, String> {
     match read_str(rdr) {
         Some(s) => Ok(s),
-        None => Err(~"invalid path"),
+        None => Err("invalid path".to_string()),
     }
 }
 
-fn parse_headers<R: Reader + Buffer>(rdr: &mut R) -> Result<Headers, ~str> {
+fn parse_headers<R: Reader + Buffer>(rdr: &mut R) -> Result<Headers, String> {
     let tns = match tnetstring::from_reader(rdr) {
-        None => return Err(~"empty headers"),
-        Some(tns) => tns,
+        Err(err) => {
+            return Err(err.to_string());
+        }
+        Ok(None) => {
+            return Err("empty headers".to_string());
+        }
+        Ok(Some(tns)) => tns,
     };
 
     match tns {
@@ -296,39 +303,43 @@ fn parse_headers<R: Reader + Buffer>(rdr: &mut R) -> Result<Headers, ~str> {
 
         // Fall back onto json if we got a string.
         tnetstring::Str(bytes) => {
-            match json::from_str(str::from_utf8(bytes)) {
-                Err(e) => return Err(e.to_str()),
+            match json::from_str(str::from_utf8(bytes.as_slice()).unwrap()) {
+                Err(e) => return Err(e.to_string()),
                 Ok(json::Object(map)) => parse_json_headers(map),
-                Ok(_) => Err(~"header is not a dictionary"),
+                Ok(_) => Err("header is not a dictionary".to_string()),
             }
         }
 
-        _ => Err(~"invalid header"),
+        _ => Err("invalid header".to_string()),
     }
 }
 
-fn parse_tnetstring_headers(map: tnetstring::Map) -> Result<Headers, ~str> {
-    let mut headers = HashMap::new();
+fn parse_tnetstring_headers(map: HashMap<Vec<u8>, tnetstring::TNetString>) -> Result<Headers, String> {
+    let mut headers: HashMap<String, Vec<String>> = HashMap::new();
 
     for (key, value) in map.move_iter() {
-        let key = str::from_utf8_owned(key);
+        let key = String::from_utf8(key).unwrap();
+
         let mut values = match headers.pop(&key) {
             Some(values) => values,
-            None => ~[],
+            None => vec!(),
         };
 
         match value {
-            tnetstring::Str(v) => values.push(str::from_utf8_owned(v)),
+            tnetstring::Str(v) => {
+                values.push(String::from_utf8(v).unwrap());
+            }
             tnetstring::Vec(vs) => {
                 for v in vs.move_iter() {
                     match v {
-                        tnetstring::Str(v) =>
-                            values.push(str::from_utf8_owned(v)),
-                        _ => return Err(~"header value is not a string"),
+                        tnetstring::Str(v) => {
+                            values.push(String::from_utf8(v).unwrap());
+                        }
+                        _ => return Err("header value is not a string".to_string()),
                     }
                 }
             },
-            _ => return Err(~"header value is not string"),
+            _ => return Err("header value is not string".to_string()),
         }
 
         headers.insert(key, values);
@@ -337,13 +348,13 @@ fn parse_tnetstring_headers(map: tnetstring::Map) -> Result<Headers, ~str> {
     Ok(headers)
 }
 
-fn parse_json_headers(map: ~json::Object) -> Result<Headers, ~str> {
+fn parse_json_headers(map: json::Object) -> Result<Headers, String> {
     let mut headers = HashMap::new();
 
     for (key, value) in map.iter() {
         let mut values = match headers.pop(key) {
             Some(values) => values,
-            None => ~[],
+            None => vec!(),
         };
 
         match value {
@@ -352,11 +363,11 @@ fn parse_json_headers(map: ~json::Object) -> Result<Headers, ~str> {
                 for v in vs.iter() {
                     match v {
                         &json::String(ref v) => values.push(v.clone()),
-                        _ => return Err(~"header value is not a string"),
+                        _ => return Err("header value is not a string".to_string()),
                     }
                 }
             }
-            _ => return Err(~"header value is not string"),
+            _ => return Err("header value is not string".to_string()),
         }
 
         headers.insert(key.clone(), values);
@@ -365,13 +376,14 @@ fn parse_json_headers(map: ~json::Object) -> Result<Headers, ~str> {
     Ok(headers)
 }
 
-fn parse_body<R: Reader + Buffer>(rdr: &mut R) -> Result<~[u8], ~str> {
+fn parse_body<R: Reader + Buffer>(rdr: &mut R) -> Result<Vec<u8>, String> {
     match tnetstring::from_reader(rdr) {
-        None => Err(~"empty body"),
-        Some(tns) => {
+        Err(err) => Err(err.to_string()),
+        Ok(None) => Err("empty body".to_string()),
+        Ok(Some(tns)) => {
             match tns {
                 tnetstring::Str(body) => Ok(body),
-                _ => Err(~"invalid body"),
+                _ => Err("invalid body".to_string()),
             }
         }
     }
