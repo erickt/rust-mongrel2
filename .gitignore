@@ -1,6 +1,6 @@
-config.sqlite
 *.dylib
 *.dSYM
-logs/
-run/
+/examples/config.sqlite
+/examples/logs/
+/examples/run/
 /target/
