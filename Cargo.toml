@@ -5,7 +5,6 @@ authors = ["erick.tryzelaar@gmail.com"]
 
 [[lib]]
 name = "mongrel2"
-path = "src/mongrel2/lib.rs"
 
 [[example]]
 name = "example"
