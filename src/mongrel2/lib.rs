@@ -189,12 +189,12 @@ pub type Headers = HashMap<String, Vec<String>>;
 
 #[deriving(Clone)]
 pub struct Request {
-    uuid: String,
-    id: String,
-    path: String,
-    headers: Headers,
-    body: Vec<u8>,
-    json_body: Option<json::Object>,
+    pub uuid: String,
+    pub id: String,
+    pub path: String,
+    pub headers: Headers,
+    pub body: Vec<u8>,
+    pub json_body: Option<json::Object>,
 }
 
 impl Request {
