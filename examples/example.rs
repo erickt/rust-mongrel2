@@ -34,6 +34,6 @@ fn main() {
             200u,
             "OK",
             &headers,
-            "hello world!").unwrap();
+            b"hello world!").unwrap();
     }
 }

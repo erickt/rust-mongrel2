@@ -70,7 +70,6 @@ impl Connection {
         }
 
         for rep_addr in rep_addrs.iter() {
-            println!("rep: {}", *rep_addr);
             match rep.connect(rep_addr.as_slice()) {
                 Ok(()) => { },
                 Err(err) => { return Err(ZmqError(err)); }
@@ -105,34 +104,28 @@ impl Connection {
             id: &[String],
             body: &[u8]) -> Result<(), Error> {
         let mut wr = MemWriter::new();
-        {
-            match write!(wr, "{} ", uuid) {
-                Ok(()) => { }
-                Err(err) => { return Err(IoError(err)); }
-            }
-
-            let id = id.connect(" ").into_bytes();
-            match tnetstring::to_writer(&mut wr, &tnetstring::Str(id)) {
-                Ok(()) => { }
-                Err(err) => { return Err(IoError(err)); }
-            }
-
-            match write!(wr, " ") {
-                Ok(()) => { }
-                Err(err) => { return Err(IoError(err)); }
-            }
-
-            match wr.write(body) {
-                Ok(()) => { }
-                Err(err) => { return Err(IoError(err)); }
-            }
+        match write!(wr, "{} ", uuid) {
+            Ok(()) => { }
+            Err(err) => { return Err(IoError(err)); }
         }
 
-        println!("fee: ---\n{}---\n", str::from_utf8(wr.get_ref().as_slice()));
+        let id = id.connect(" ").into_bytes();
+        match tnetstring::to_writer(&mut wr, &tnetstring::Str(id)) {
+            Ok(()) => { }
+            Err(err) => { return Err(IoError(err)); }
+        }
 
-        let bytes = wr.unwrap();
+        match write!(wr, " ") {
+            Ok(()) => { }
+            Err(err) => { return Err(IoError(err)); }
+        }
 
-        match self.rep.send(bytes.as_slice(), 0) {
+        match wr.write(body) {
+            Ok(()) => { }
+            Err(err) => { return Err(IoError(err)); }
+        }
+
+        match self.rep.send(wr.unwrap().as_slice(), 0) {
             Ok(()) => Ok(()),
             Err(err) => Err(ZmqError(err)),
         }
@@ -147,34 +140,34 @@ impl Connection {
                   code: uint,
                   status: &str,
                   headers: &Headers,
-                  body: &str) -> Result<(), Error> {
-        let body_bytes = body.as_bytes();
+                  body: &[u8]) -> Result<(), Error> {
         let mut wr = MemWriter::new();
 
-        {
-            match write!(wr, "HTTP/1.1 {} {}\r\n", code, status) {
-                Ok(()) => { }
-                Err(err) => { return Err(IoError(err)); }
-            }
-
-            for (key, values) in headers.iter() {
-                for value in values.iter() {
-                    match write!(wr, "{}: {}\r\n", *key, *value) {
-                        Ok(()) => { }
-                        Err(err) => { return Err(IoError(err)); }
-                    }
-                };
-            }
-
-            match write!(wr, "Content-Length: {}\r\n\r\n", body_bytes.len()) {
-                Ok(()) => { }
-                Err(err) => { return Err(IoError(err)); }
-            }
+        match write!(wr, "HTTP/1.1 {} {}\r\n", code, status) {
+            Ok(()) => { }
+            Err(err) => { return Err(IoError(err)); }
         }
 
-        let bytes = wr.unwrap();
+        for (key, values) in headers.iter() {
+            for value in values.iter() {
+                match write!(wr, "{}: {}\r\n", *key, *value) {
+                    Ok(()) => { }
+                    Err(err) => { return Err(IoError(err)); }
+                }
+            };
+        }
 
-        self.reply(req, bytes.as_slice())
+        match write!(wr, "Content-Length: {}\r\n\r\n", body.len()) {
+            Ok(()) => { }
+            Err(err) => { return Err(IoError(err)); }
+        }
+
+        match wr.write(body) {
+            Ok(()) => { }
+            Err(err) => { return Err(IoError(err)); }
+        }
+
+        self.reply(req, wr.unwrap().as_slice())
     }
 }
 
