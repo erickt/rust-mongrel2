@@ -418,3 +418,55 @@ fn parse_body<R: Reader + Buffer>(rdr: &mut R) -> Result<Vec<u8>, Error> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use zmq;
+
+    #[test]
+    fn test_roundtrip() {
+        let mut ctx = zmq::Context::new();
+
+        let req_address = "inproc://requests";
+        let rep_address = "inproc://responses";
+
+        // This must come before creating the mongrel2 sockets or else it will deadlock.
+        let mut connection = super::Connection::new(&mut ctx,
+            Some("F0D32575-2ABB-4957-BC8B-12DAC8AFF13A".to_string()),
+            vec!(req_address.to_string()),
+            vec!(rep_address.to_string())).unwrap();
+
+        let mut req_socket = ctx.socket(zmq::PUSH).unwrap();
+        req_socket.bind(req_address).unwrap();
+
+        let mut rep_socket = ctx.socket(zmq::SUB).unwrap();
+        rep_socket.bind(rep_address).unwrap();
+        rep_socket.set_subscribe(b"").unwrap();
+
+        req_socket.send_str("abCD-123 56 / 13:{\"foo\":\"bar\"},11:hello world,", 0).unwrap();
+
+        let request = connection.recv().unwrap();
+
+        assert_eq!(request.uuid.as_slice(), "abCD-123");
+        assert_eq!(request.id.as_slice(), "56");
+        assert_eq!(request.headers.len(), 1);
+
+        let value = match request.headers.find_equiv(&"foo") {
+            Some(header_list) => header_list[0].clone(),
+            None => "".to_string(),
+        };
+
+        assert_eq!(value.as_slice(), "bar");
+        assert_eq!(request.body.as_slice(), b"hello world");
+
+        let headers = HashMap::new();
+
+        connection.reply_http(&request, 200, "ok", &headers, b"hey there").unwrap();
+
+        let response = rep_socket.recv_str(0).unwrap();
+        assert_eq!(
+            response.as_slice(),
+            "abCD-123 2:56, HTTP/1.1 200 ok\r\nContent-Length: 9\r\n\r\nhey there");
+    }
+}
